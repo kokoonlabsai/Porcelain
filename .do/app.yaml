@@ -1,0 +1,70 @@
+# DigitalOcean App Platform spec: free static frontend + ~$5/month API container on one domain.
+# If this app moves to its own repo, change repo/branch and drop the "clinic/" prefix from the paths below.
+name: derma-clinic
+region: blr
+
+static_sites:
+  - name: web
+    github:
+      repo: kokoonlabsai/Expense
+      branch: main
+      deploy_on_push: true
+    source_dir: clinic/client
+    build_command: npm ci && npm run build
+    output_dir: dist
+    catchall_document: index.html
+
+services:
+  - name: api
+    github:
+      repo: kokoonlabsai/Expense
+      branch: main
+      deploy_on_push: true
+    source_dir: clinic/server
+    dockerfile_path: clinic/server/Dockerfile
+    http_port: 8080
+    instance_count: 1
+    instance_size_slug: apps-s-1vcpu-0.5gb
+    health_check:
+      http_path: /api/health
+    envs:
+      - key: TZ
+        value: Asia/Kolkata
+      - key: JWT_SECRET
+        type: SECRET
+        value: change-me-to-a-long-random-string
+      - key: TURSO_DATABASE_URL
+        type: SECRET
+        value: libsql://your-db-name.turso.io
+      - key: TURSO_AUTH_TOKEN
+        type: SECRET
+        value: your-turso-auth-token
+      - key: ADMIN_PHONE              # the first admin login is created from these on start-up
+        value: "+91 90000 00001"
+      - key: ADMIN_PASSWORD
+        type: SECRET
+        value: change-me
+      - key: APP_URL                  # used for links in emails
+        value: https://your-clinic-domain.com
+      - key: SMTP_HOST
+        value: smtp.gmail.com
+      - key: SMTP_USER
+        type: SECRET
+        value: clinic@example.com
+      - key: SMTP_PASS
+        type: SECRET
+        value: app-password
+
+ingress:
+  rules:
+    - component:
+        name: api
+        preserve_path_prefix: true
+      match:
+        path:
+          prefix: /api
+    - component:
+        name: web
+      match:
+        path:
+          prefix: /

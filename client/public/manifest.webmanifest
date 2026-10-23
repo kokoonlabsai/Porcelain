@@ -1,0 +1,9 @@
+{
+  "name": "Derma Clinic",
+  "short_name": "Clinic",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#F7F2EB",
+  "theme_color": "#2F5D50",
+  "icons": [{ "src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }]
+}
