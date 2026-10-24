@@ -43,6 +43,14 @@ services:
         value: change-me
       - key: APP_URL                  # used for links in emails
         value: https://your-clinic-domain.com
+      - key: RAZORPAY_KEY_ID          # Razorpay Dashboard → Account & Settings → API keys
+        value: rzp_live_xxxxxxxxxxxx
+      - key: RAZORPAY_KEY_SECRET
+        type: SECRET
+        value: your-razorpay-key-secret
+      - key: RAZORPAY_WEBHOOK_SECRET  # the secret you set when adding the webhook
+        type: SECRET
+        value: your-webhook-secret
       - key: SMTP_HOST
         value: smtp.gmail.com
       - key: SMTP_USER

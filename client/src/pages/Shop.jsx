@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { ArrowLeft, ArrowRight, Minus, Plus, ShoppingBag, X, Truck, Store, Check, Stethoscope, Search } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Minus, Plus, ShoppingBag, X, Truck, Store, Check, Stethoscope, Search, CreditCard, Wallet, Lock } from 'lucide-react';
 import { api } from '../lib/api';
 import { useApp, useLoad } from '../lib/store';
 import { useCart, inr } from '../lib/cart';
@@ -221,12 +221,49 @@ export function CartDrawer() {
   );
 }
 
+/** Loads Razorpay's checkout script once, on demand. */
+let razorpayScript;
+function loadRazorpay() {
+  if (window.Razorpay) return Promise.resolve();
+  razorpayScript ||= new Promise((resolve, reject) => {
+    const el = document.createElement('script');
+    el.src = 'https://checkout.razorpay.com/v1/checkout.js';
+    el.onload = () => resolve();
+    el.onerror = () => { razorpayScript = null; reject(new Error('Couldn’t load the payment window. Check your connection and try again.')); };
+    document.body.appendChild(el);
+  });
+  return razorpayScript;
+}
+
+/** Opens Razorpay's window; resolves with the signed result, or null if the customer closed it. */
+function payWithRazorpay(rzp) {
+  return new Promise((resolve, reject) => {
+    const checkout = new window.Razorpay({
+      key: rzp.key,
+      order_id: rzp.order_id,
+      amount: rzp.amount,
+      currency: rzp.currency,
+      name: rzp.name,
+      description: rzp.description,
+      prefill: rzp.prefill,
+      theme: { color: '#1F3264' },
+      handler: (result) => resolve(result),
+      modal: { ondismiss: () => resolve(null), confirm_close: true },
+    });
+    checkout.on('payment.failed', () => { /* Razorpay shows the error and lets them retry inside the window. */ });
+    try { checkout.open(); } catch (e) { reject(e); }
+  });
+}
+
 export function Checkout() {
   const { user, isStaff, settings } = useApp();
   const patient = user && !isStaff ? user : null;
   const { items, subtotal, clear, setOpen } = useCart();
   const delivery = shopDelivery(settings);
-  const [f, setF] = useState({ name: patient?.name || '', phone: patient?.phone || '', email: patient?.email || '', fulfilment: 'pickup', address: '', city: 'Bhopal', pincode: '', notes: '' });
+  const config = useLoad(() => api('/shop/config'), []);
+  const online = !!config.data?.online_payment;
+  const [f, setF] = useState({ name: patient?.name || '', phone: patient?.phone || '', email: patient?.email || '', fulfilment: 'pickup', payment: 'online', address: '', city: 'Bhopal', pincode: '', notes: '' });
+  const payment = online ? f.payment : 'offline';
   const [errors, setErrors] = useState({});
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -240,8 +277,20 @@ export function Checkout() {
     setErrors({});
     setError('');
     try {
-      const r = await api('/shop/orders', { method: 'POST', body: { ...f, items: items.map((i) => ({ product_id: i.id, qty: i.qty })) } });
-      setDone(r.order);
+      if (payment === 'online') await loadRazorpay();
+      const r = await api('/shop/orders', { method: 'POST', body: { ...f, payment, items: items.map((i) => ({ product_id: i.id, qty: i.qty })) } });
+      let order = r.order;
+      if (r.razorpay) {
+        const result = await payWithRazorpay(r.razorpay);
+        if (!result) {
+          // Closed without paying: release the stock and let them try again or switch method.
+          api(`/shop/orders/${order.id}/abandon`, { method: 'POST', body: { razorpay_order_id: r.razorpay.order_id } }).catch(() => {});
+          setError('Payment wasn’t completed. You can try again, or choose to pay at the clinic or on delivery.');
+          return;
+        }
+        order = (await api(`/shop/orders/${order.id}/verify`, { method: 'POST', body: result })).order;
+      }
+      setDone(order);
       clear();
       window.scrollTo({ top: 0, behavior: 'smooth' });
     } catch (ex) {
@@ -263,7 +312,12 @@ export function Checkout() {
           {done.delivery_fee > 0 && <div className="row between summary-line"><span>Delivery</span><b>{inr(done.delivery_fee)}</b></div>}
           <div className="row between summary-line"><span className="strong">Total</span><b className="serif-num">{inr(done.total)}</b></div>
         </div>
-        <p className="muted mt-24">{done.fulfilment === 'delivery' ? 'We’ll call you to confirm, then deliver. Pay on delivery.' : 'We’ll let you know when it’s ready to collect. Pay at the clinic.'}</p>
+        {done.payment_status === 'paid' && <div className="paid-note mt-24"><Lock size={16} />Paid online · {inr(done.total)}</div>}
+        <p className="muted mt-16">
+          {done.fulfilment === 'delivery'
+            ? `We’ll call you to confirm, then deliver.${done.payment_status === 'paid' ? '' : ' Pay on delivery.'}`
+            : `We’ll let you know when it’s ready to collect.${done.payment_status === 'paid' ? '' : ' Pay at the clinic.'}`}
+        </p>
         <div className="row wrap mt-24" style={{ justifyContent: 'center', gap: 12 }}>
           <Link to="/shop" className="btn">Keep shopping</Link>
           {patient && <Link to="/portal/orders" className="btn primary">My orders</Link>}
@@ -286,14 +340,27 @@ export function Checkout() {
             <div className="card-title">How would you like it?</div>
             <div className="grid g-2" style={{ gap: 12 }}>
               <button type="button" className={`concern-card ${f.fulfilment === 'pickup' ? 'on' : ''}`} onClick={() => setF({ ...f, fulfilment: 'pickup' })}>
-                <Store size={22} color="var(--brand)" /><b>Pick up at the clinic</b><span className="small muted">Free · pay at the clinic</span>
+                <Store size={22} color="var(--brand)" /><b>Pick up at the clinic</b><span className="small muted">Free</span>
               </button>
               <button type="button" disabled={!delivery.enabled} className={`concern-card ${f.fulfilment === 'delivery' ? 'on' : ''}`} onClick={() => setF({ ...f, fulfilment: 'delivery' })}>
                 <Truck size={22} color="var(--brand)" /><b>Deliver to me</b>
-                <span className="small muted">{delivery.enabled ? `${delivery.fee ? inr(delivery.fee) : 'Free'}${delivery.freeOver ? ` · free over ${inr(delivery.freeOver)}` : ''} · cash on delivery` : 'Not available right now'}</span>
+                <span className="small muted">{delivery.enabled ? `${delivery.fee ? inr(delivery.fee) : 'Free'}${delivery.freeOver ? ` · free over ${inr(delivery.freeOver)}` : ''}` : 'Not available right now'}</span>
               </button>
             </div>
           </div>
+          {online && (
+            <div className="card stack gap-16">
+              <div className="card-title">Payment</div>
+              <div className="grid g-2" style={{ gap: 12 }}>
+                <button type="button" className={`concern-card ${f.payment === 'online' ? 'on' : ''}`} onClick={() => setF({ ...f, payment: 'online' })}>
+                  <CreditCard size={22} color="var(--brand)" /><b>Pay online</b><span className="small muted">UPI, cards, netbanking · secured by Razorpay</span>
+                </button>
+                <button type="button" className={`concern-card ${f.payment === 'offline' ? 'on' : ''}`} onClick={() => setF({ ...f, payment: 'offline' })}>
+                  <Wallet size={22} color="var(--brand)" /><b>{f.fulfilment === 'delivery' ? 'Cash on delivery' : 'Pay at the clinic'}</b><span className="small muted">{f.fulfilment === 'delivery' ? 'Cash or UPI to the delivery person' : 'When you collect'}</span>
+                </button>
+              </div>
+            </div>
+          )}
           <div className="card stack gap-16">
             <div className="card-title">Your details</div>
             <div className="grid g-2">
@@ -329,8 +396,11 @@ export function Checkout() {
           <div className="row between small mt-8"><span>Delivery</span><span>{f.fulfilment === 'pickup' ? 'Pick up' : fee ? inr(fee) : 'Free'}</span></div>
           <div className="row between mt-16"><span className="strong">Total</span><b className="serif-num" style={{ fontSize: 26 }}>{inr(subtotal + fee)}</b></div>
           {error && !Object.keys(errors).length && <div className="notice red small mt-16">{error}</div>}
-          <Button className="primary lg block mt-24" loading={busy}>Place order</Button>
-          <p className="tiny muted mt-12 center">{f.fulfilment === 'delivery' ? 'Pay in cash or UPI on delivery.' : 'Pay at the clinic when you collect.'}</p>
+          <Button className="primary lg block mt-24" loading={busy}>{payment === 'online' ? <><Lock size={16} />Pay {inr(subtotal + fee)}</> : 'Place order'}</Button>
+          <p className="tiny muted mt-12 center">
+            {payment === 'online' ? 'You’ll pay on Razorpay’s secure window. We never see your card or UPI details.'
+              : f.fulfilment === 'delivery' ? 'Pay in cash or UPI on delivery.' : 'Pay at the clinic when you collect.'}
+          </p>
         </div>
       </form>
     </div>

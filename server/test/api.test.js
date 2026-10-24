@@ -20,7 +20,37 @@ let server;
 let base;
 let mongo;
 let dbModule;
+// A stand-in for Razorpay's API, so online payments can be tested without a live account.
+const http = require('http');
+const rzpCalls = [];
+let rzpPayments = {};
+let fakeRzp;
+async function startFakeRazorpay() {
+  fakeRzp = http.createServer((req, res) => {
+    let body = '';
+    req.on('data', (c) => { body += c; });
+    req.on('end', () => {
+      rzpCalls.push({ method: req.method, url: req.url, body: body ? JSON.parse(body) : null, auth: req.headers.authorization });
+      const send = (o) => { res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify(o)); };
+      if (req.method === 'POST' && req.url === '/orders') {
+        const b = JSON.parse(body);
+        return send({ id: `order_${rzpCalls.length}`, amount: b.amount, currency: b.currency, receipt: b.receipt, status: 'created' });
+      }
+      const m = /^\/orders\/([^/]+)\/payments$/.exec(req.url);
+      if (m) return send({ items: rzpPayments[m[1]] || [] });
+      if (/^\/payments\/[^/]+\/refund$/.test(req.url)) return send({ id: 'rfnd_1', status: 'processed' });
+      res.writeHead(404); res.end('{}');
+    });
+  });
+  await new Promise((r) => fakeRzp.listen(0, r));
+  process.env.RAZORPAY_API_BASE = `http://127.0.0.1:${fakeRzp.address().port}`;
+  process.env.RAZORPAY_KEY_ID = 'rzp_test_key';
+  process.env.RAZORPAY_KEY_SECRET = 'rzp_test_secret';
+  process.env.RAZORPAY_WEBHOOK_SECRET = 'whsec_test';
+}
+
 before(async () => {
+  await startFakeRazorpay();
   if (!process.env.MONGODB_URI) {
     const { MongoMemoryServer } = require('mongodb-memory-server');
     mongo = await MongoMemoryServer.create();
@@ -35,6 +65,7 @@ before(async () => {
 });
 after(async () => {
   server?.close();
+  fakeRzp?.close();
   if (dbModule) {
     await dbModule.database.dropDatabase().catch(() => {});
     await dbModule.client.close();
@@ -332,4 +363,62 @@ test('shop: admin adds products; customers order; stock is reserved and restored
   assert.equal(mine.body.order.customer.name, 'Asha Rao');
   assert.equal(mine.body.order.payment, 'pay_at_clinic');
   assert.equal((await call('GET', '/api/me/orders', { token: asha })).body.orders.length, 1);
+});
+
+test('razorpay: pay online, verify the signature, webhook, abandon and refund', async () => {
+  const crypto = require('crypto');
+  const sign = (orderId, paymentId) => crypto.createHmac('sha256', 'rzp_test_secret').update(`${orderId}|${paymentId}`).digest('hex');
+  assert.equal((await call('GET', '/api/shop/config')).body.online_payment, true);
+  const product = (await call('POST', '/api/admin/products', { token: admin, body: { name: 'Online Test Serum', category: 'serums', price: 1000, stock: 5 } })).body.product;
+
+  // 1. Checkout creates a Razorpay order for the total, in paise; the order waits for payment.
+  const r = await call('POST', '/api/shop/orders', { body: { name: 'Riya', phone: '9866000001', payment: 'online', items: [{ product_id: product.id, qty: 2 }] } });
+  assert.equal(r.status, 201);
+  assert.equal(r.body.order.status, 'awaiting_payment');
+  assert.equal(r.body.razorpay.amount, 200000);
+  assert.equal(r.body.razorpay.key, 'rzp_test_key');
+  assert.ok(rzpCalls.at(-1).auth.startsWith('Basic '));
+  const rzpOrder = r.body.razorpay.order_id;
+  // Unpaid orders don't show in the staff "open" queue.
+  assert.ok(!(await call('GET', '/api/staff/orders?status=open', { token: reception })).body.orders.some((o) => o.id === r.body.order.id));
+
+  // 2. A forged signature is rejected; the real one marks it paid.
+  const forged = await call('POST', `/api/shop/orders/${r.body.order.id}/verify`, { body: { razorpay_order_id: rzpOrder, razorpay_payment_id: 'pay_1', razorpay_signature: 'deadbeef' } });
+  assert.equal(forged.status, 400);
+  const ok = await call('POST', `/api/shop/orders/${r.body.order.id}/verify`, { body: { razorpay_order_id: rzpOrder, razorpay_payment_id: 'pay_1', razorpay_signature: sign(rzpOrder, 'pay_1') } });
+  assert.equal(ok.status, 200);
+  assert.equal(ok.body.order.payment_status, 'paid');
+  assert.equal(ok.body.order.status, 'placed');
+
+  // 3. Cancelling a paid order refunds it through Razorpay and restocks.
+  const c = await call('PATCH', `/api/staff/orders/${r.body.order.id}`, { token: reception, body: { status: 'cancelled' } });
+  assert.equal(c.body.order.payment_status, 'refunded');
+  assert.equal(rzpCalls.at(-1).url, '/payments/pay_1/refund');
+  assert.equal(rzpCalls.at(-1).body.amount, 200000);
+  assert.equal((await call('GET', '/api/admin/products', { token: admin })).body.products.find((p) => p.id === product.id).stock, 5);
+
+  // 4. Paid but the browser closed: the signed webhook marks it paid; a bad signature is ignored.
+  const w = await call('POST', '/api/shop/orders', { body: { name: 'Riya', phone: '9866000001', payment: 'online', items: [{ product_id: product.id, qty: 1 }] } });
+  const event = JSON.stringify({ event: 'payment.captured', payload: { payment: { entity: { id: 'pay_2', order_id: w.body.razorpay.order_id } } } });
+  const post = (sig) => fetch(`${base}/api/shop/razorpay/webhook`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-razorpay-signature': sig }, body: event });
+  assert.equal((await post('nope')).status, 400);
+  assert.equal((await post(crypto.createHmac('sha256', 'whsec_test').update(event).digest('hex'))).status, 200);
+  const paidByHook = (await call('GET', '/api/staff/orders', { token: reception })).body.orders.find((o) => o.id === w.body.order.id);
+  assert.equal(paidByHook.payment_status, 'paid');
+  assert.equal(paidByHook.paid_via, 'webhook');
+
+  // 5. Closing the payment window without paying gives the stock back at once.
+  const a = await call('POST', '/api/shop/orders', { body: { name: 'Riya', phone: '9866000001', payment: 'online', items: [{ product_id: product.id, qty: 3 }] } });
+  assert.equal((await call('GET', '/api/admin/products', { token: admin })).body.products.find((p) => p.id === product.id).stock, 1);
+  await call('POST', `/api/shop/orders/${a.body.order.id}/abandon`, { body: { razorpay_order_id: a.body.razorpay.order_id } });
+  assert.equal((await call('GET', '/api/admin/products', { token: admin })).body.products.find((p) => p.id === product.id).stock, 4);
+
+  // 6. The expiry check asks Razorpay first: a payment it finds is honoured, not cancelled.
+  const e = await call('POST', '/api/shop/orders', { body: { name: 'Riya', phone: '9866000001', payment: 'online', items: [{ product_id: product.id, qty: 1 }] } });
+  rzpPayments[e.body.razorpay.order_id] = [{ id: 'pay_3', status: 'captured' }];
+  const { db, oid } = require('../src/db');
+  await db.orders.updateOne({ _id: oid(e.body.order.id) }, { $set: { created_at: new Date(Date.now() - 60 * 60_000) } });
+  await require('../src/routes/shop').expireUnpaidOrders();
+  const reconciled = (await call('GET', '/api/staff/orders', { token: reception })).body.orders.find((o) => o.id === e.body.order.id);
+  assert.equal(reconciled.payment_status, 'paid');
 });

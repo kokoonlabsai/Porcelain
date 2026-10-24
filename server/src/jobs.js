@@ -45,6 +45,9 @@ async function runReminders() {
 function startJobs() {
   const tick = () => runReminders().catch((e) => console.error('[jobs]', e.message));
   setTimeout(tick, 10_000);
+  // Unpaid online shop orders give their stock back.
+  const expire = () => require('./routes/shop').expireUnpaidOrders().catch((e) => console.error('[jobs:shop]', e.message));
+  setInterval(expire, 5 * 60_000);
   return setInterval(tick, 30 * 60_000);
 }
 

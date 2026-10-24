@@ -50,7 +50,12 @@ The website and clinic app for Porcelain Skin Clinic, a dermatology and aestheti
 - **Online shop** at `/shop`:
   - category filter, search and product pages
   - a slide-in bag, and checkout
-- **Fulfilment:** customers pick up at the clinic and pay there, or get delivery with cash on delivery. No card details are handled.
+- **Payment:** online through Razorpay (UPI, cards, netbanking, wallets), at the clinic on pickup, or cash on delivery. Card and UPI details are entered on Razorpay's own window and never reach this server.
+- **Online payment safeguards:**
+  - each payment's signature is checked on the server before an order is marked paid
+  - a webhook catches payments made after the customer closed the browser
+  - unpaid orders give their stock back when the window is closed, or after 30 minutes, but only after checking with Razorpay that nothing was paid
+  - cancelling a paid order refunds it through Razorpay
 - **Delivery:** set the fee and the order value for free delivery under **Clinic details**.
 - **Stock:** goes down when an order is placed and back up if it's cancelled. Prices are always taken from the database.
 - **Admin → Products:** add products with photos, prices, MRP, stock and a "Doctor's pick" flag.
@@ -120,12 +125,25 @@ This uses a cheap setup: [MongoDB Atlas](https://www.mongodb.com/atlas) for the 
 | `TZ` | The clinic's time zone, e.g. `Asia/Kolkata`. It decides "today" and which slots have passed |
 | `DEFAULT_COUNTRY_CODE` | `91` by default. Added when a 10-digit number is typed without one |
 | `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `MAIL_FROM` | Email. Works with Gmail (app password), Zoho, Brevo or SES. Without it, emails are skipped |
+| `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET`, `RAZORPAY_WEBHOOK_SECRET` | Online payments in the shop (see Razorpay setup below) |
 | `APP_URL` | Your site's address, used for the portal link in emails |
 | `CORS_ORIGIN` | Only needed if the frontend is on a different domain |
+
+## Razorpay setup
+
+1. Sign up at [razorpay.com](https://razorpay.com) in the clinic's name and complete KYC. While you wait, you can use **Test mode**.
+2. Go to **Account & Settings → API keys**, generate a key, and set `RAZORPAY_KEY_ID` and `RAZORPAY_KEY_SECRET` on the server. Test keys start with `rzp_test_` and live keys with `rzp_live_`.
+3. Go to **Webhooks → Add new webhook**:
+   - URL: `https://<your-site>/api/shop/razorpay/webhook`
+   - Events: `payment.captured` and `order.paid`
+   - Choose a secret, and set the same value as `RAZORPAY_WEBHOOK_SECRET`.
+4. Under **Payment capture**, keep automatic capture on. That's the default.
+
+"Pay online" appears at checkout as soon as the keys are set. Without them, the shop offers pay-at-clinic and cash on delivery only.
 
 ## Ideas for later
 - SMS/WhatsApp OTP for sign-up and password reset (needs a paid provider such as MSG91 or Twilio)
 - WhatsApp Business API reminders, instead of email and click-to-chat links
-- Online payments and invoices
+- Invoices / GST receipts for shop orders
 - Multiple doctors, each with their own schedule
 - Before/after photo comparison slider

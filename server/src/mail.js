@@ -119,9 +119,10 @@ async function orderConfirmation(order) {
   const s = await getSettings();
   const inr = (n) => `₹${Number(n).toLocaleString('en-IN')}`;
   const rows = order.items.map((i) => `<tr><td style="padding:6px 0">${esc(i.name)}${i.size ? ` <span style="color:#7a847f">(${esc(i.size)})</span>` : ''} × ${i.qty}</td><td style="padding:6px 0;text-align:right">${inr(i.price * i.qty)}</td></tr>`).join('');
+  const paid = order.payment_status === 'paid';
   const how = order.fulfilment === 'delivery'
-    ? `We’ll deliver to ${esc([order.address.line, order.address.city, order.address.pincode].join(', '))}. Pay on delivery.`
-    : `Collect it from the clinic${s.address ? ` (${esc(s.address)})` : ''} and pay there. We’ll let you know when it’s ready.`;
+    ? `We’ll deliver to ${esc([order.address.line, order.address.city, order.address.pincode].join(', '))}.${paid ? ' Paid online — nothing to pay on delivery.' : ' Pay on delivery.'}`
+    : `Collect it from the clinic${s.address ? ` (${esc(s.address)})` : ''}.${paid ? ' Paid online.' : ' Pay when you collect.'} We’ll let you know when it’s ready.`;
   const html = layout(s, `Order ${esc(order.number)} placed`, `
     <p>Hi ${esc(order.customer.name)}, thank you for your order.</p>
     <table style="width:100%;border-collapse:collapse">${rows}

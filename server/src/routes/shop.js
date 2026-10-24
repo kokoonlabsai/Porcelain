@@ -4,11 +4,13 @@ const { Binary } = require('mongodb');
 const { db, getSettings, oid, out, contains, ObjectId } = require('../db');
 const { normalizePhone } = require('../phone');
 const mail = require('../mail');
+const razorpay = require('../razorpay');
 const { HttpError, wrap, optionalAuth, requireAuth, requireStaff, str, isEmail } = require('../util');
 
 /**
  * The shop: products, cart checkout and orders.
- * Payment happens at the clinic (pickup) or on delivery — no card details ever reach this server.
+ * Customers pay online through Razorpay (when its keys are set), at the clinic on pickup, or on delivery.
+ * Card and UPI details are entered on Razorpay's checkout and never reach this server.
  */
 const CATEGORIES = ['cleansers', 'serums', 'moisturisers', 'sunscreen', 'treatments', 'hair', 'body'];
 const ORDER_STATUSES = ['placed', 'confirmed', 'ready', 'completed', 'cancelled'];
@@ -30,6 +32,54 @@ async function deliveryTerms() {
     enabled: s.shop_delivery !== '0',
     areas: s.shop_delivery_areas,
   };
+}
+
+/** Unpaid online orders give their stock back after this long. */
+const PAYMENT_WINDOW_MS = 30 * 60_000;
+
+const releaseStock = (order) => Promise.all(order.items.map((i) => db.products.updateOne({ _id: i.product_id }, { $inc: { stock: i.qty } })));
+
+/**
+ * Marks an online order paid (from the checkout handler, the webhook or the expiry check). Safe to call twice.
+ * A payment that arrives after the order expired revives it, and staff are told to check the stock.
+ */
+async function markPaid(order, paymentId, via) {
+  const now = new Date();
+  const revived = order.status === 'cancelled' && order.cancel_reason === 'payment_timeout';
+  const r = await db.orders.updateOne(
+    { _id: order._id, payment_status: { $ne: 'paid' } },
+    {
+      $set: {
+        payment_status: 'paid', razorpay_payment_id: paymentId, paid_at: now, paid_via: via, status: 'placed', updated_at: now,
+        ...(revived ? { staff_note: 'Paid after the order had expired — please check stock.' } : {}),
+      },
+      $unset: { cancel_reason: '' },
+    }
+  );
+  if (!r.modifiedCount) return false;
+  if (revived) await Promise.all(order.items.map((i) => db.products.updateOne({ _id: i.product_id }, { $inc: { stock: -i.qty } })));
+  const fresh = await db.orders.findOne({ _id: order._id });
+  if (fresh.customer.email) mail.orderConfirmation(fresh).catch(() => {});
+  return true;
+}
+
+/** Releases stock held by online orders nobody paid for — after checking with Razorpay first. */
+async function expireUnpaidOrders() {
+  if (!razorpay.enabled()) return 0;
+  const stale = await db.orders.find({ status: 'awaiting_payment', created_at: { $lt: new Date(Date.now() - PAYMENT_WINDOW_MS) } }).toArray();
+  let expired = 0;
+  for (const o of stale) {
+    try {
+      const { items = [] } = await razorpay.orderPayments(o.razorpay_order_id);
+      const paid = items.find((p) => p.status === 'captured' || p.status === 'authorized');
+      if (paid) { await markPaid(o, paid.id, 'reconcile'); continue; }
+    } catch {
+      continue; // Razorpay unreachable: try again on the next run rather than guess.
+    }
+    const r = await db.orders.updateOne({ _id: o._id, status: 'awaiting_payment' }, { $set: { status: 'cancelled', cancel_reason: 'payment_timeout', payment_status: 'failed', updated_at: new Date() } });
+    if (r.modifiedCount) { await releaseStock(o); expired++; }
+  }
+  return expired;
 }
 
 function orderNumber() {
@@ -87,6 +137,8 @@ pub.post(
     if (!phone) errors.phone = 'Enter a valid phone number';
     if (email && !isEmail(email)) errors.email = 'That email doesn’t look right';
     const terms = await deliveryTerms();
+    const online = b.payment === 'online';
+    if (online && !razorpay.enabled()) throw new HttpError(422, 'Online payment isn’t available. Please choose pay at the clinic or on delivery.');
     const fulfilment = b.fulfilment === 'delivery' && terms.enabled ? 'delivery' : 'pickup';
     let address = null;
     if (fulfilment === 'delivery') {
@@ -133,15 +185,93 @@ pub.post(
       subtotal,
       delivery_fee: deliveryFee,
       total: subtotal + deliveryFee,
-      payment: fulfilment === 'delivery' ? 'cod' : 'pay_at_clinic',
+      payment: online ? 'online' : fulfilment === 'delivery' ? 'cod' : 'pay_at_clinic',
+      payment_status: online ? 'pending' : 'due',
       notes: str(b.notes, 500),
-      status: 'placed',
+      status: online ? 'awaiting_payment' : 'placed',
       created_at: new Date(),
       updated_at: new Date(),
     };
     await db.orders.insertOne(order);
-    if (email) mail.orderConfirmation(order).catch(() => {});
-    res.status(201).json({ order: out(order) });
+
+    if (!online) {
+      if (email) mail.orderConfirmation(order).catch(() => {});
+      return res.status(201).json({ order: out(order) });
+    }
+
+    // Online: a Razorpay order for the exact total, in paise. The browser opens Razorpay's checkout with it.
+    let rzp;
+    try {
+      rzp = await razorpay.createOrder({ amount: order.total * 100, receipt: order.number, notes: { order_id: String(order._id), order_number: order.number } });
+    } catch (e) {
+      await db.orders.deleteOne({ _id: order._id });
+      await releaseStock(order);
+      console.error('[razorpay] create order failed:', e.message);
+      throw new HttpError(502, 'Online payment isn’t available right now. Please choose pay at the clinic or on delivery.');
+    }
+    await db.orders.updateOne({ _id: order._id }, { $set: { razorpay_order_id: rzp.id } });
+    const s = await getSettings();
+    res.status(201).json({
+      order: out({ ...order, razorpay_order_id: rzp.id }),
+      razorpay: {
+        key: razorpay.keyId(), order_id: rzp.id, amount: rzp.amount, currency: rzp.currency,
+        name: s.clinic_name, description: `Order ${order.number}`, prefill: { name, contact: phone, email: email || '' },
+      },
+    });
+  })
+);
+
+pub.get('/config', (req, res) => res.json({ online_payment: razorpay.enabled() }));
+
+/** Razorpay checkout succeeded in the browser: check the signature, then mark the order paid. */
+pub.post(
+  '/orders/:id/verify',
+  wrap(async (req, res) => {
+    const o = await db.orders.findOne({ _id: oid(req.params.id) });
+    const b = req.body || {};
+    if (!o || o.payment !== 'online' || o.razorpay_order_id !== b.razorpay_order_id) throw new HttpError(404, 'Order not found');
+    if (!razorpay.verifyPayment(b)) throw new HttpError(400, 'We couldn’t confirm that payment. If money was taken, it will be matched automatically — or call the clinic.');
+    await markPaid(o, b.razorpay_payment_id, 'checkout');
+    res.json({ order: out(await db.orders.findOne({ _id: o._id })) });
+  })
+);
+
+/** The customer closed Razorpay's window without paying: give the stock back now instead of in 30 minutes. */
+pub.post(
+  '/orders/:id/abandon',
+  wrap(async (req, res) => {
+    const o = await db.orders.findOne({ _id: oid(req.params.id) });
+    if (!o || o.status !== 'awaiting_payment' || o.razorpay_order_id !== req.body?.razorpay_order_id) return res.json({ ok: true });
+    try {
+      const { items = [] } = await razorpay.orderPayments(o.razorpay_order_id);
+      const paid = items.find((p) => p.status === 'captured' || p.status === 'authorized');
+      if (paid) { await markPaid(o, paid.id, 'reconcile'); return res.json({ ok: true, paid: true }); }
+    } catch {
+      return res.json({ ok: true }); // Let the expiry check decide later.
+    }
+    const r = await db.orders.updateOne({ _id: o._id, status: 'awaiting_payment' }, { $set: { status: 'cancelled', cancel_reason: 'payment_abandoned', payment_status: 'failed', updated_at: new Date() } });
+    if (r.modifiedCount) await releaseStock(o);
+    res.json({ ok: true });
+  })
+);
+
+/**
+ * Razorpay webhook (Dashboard → Webhooks → https://your-site/api/shop/razorpay/webhook, events: payment.captured, order.paid).
+ * Catches payments where the customer closed the browser before returning. Needs the raw body for the signature.
+ */
+const webhook = express.Router();
+webhook.post(
+  '/',
+  express.raw({ type: '*/*', limit: '1mb' }),
+  wrap(async (req, res) => {
+    if (!razorpay.verifyWebhook(req.body, req.get('x-razorpay-signature'))) throw new HttpError(400, 'Bad signature');
+    const event = JSON.parse(req.body.toString('utf8'));
+    const payment = event.payload?.payment?.entity;
+    if (['payment.captured', 'payment.authorized', 'order.paid'].includes(event.event) && payment?.order_id) {
+      const o = await db.orders.findOne({ razorpay_order_id: payment.order_id });
+      if (o) await markPaid(o, payment.id, 'webhook');
+    }
+    res.json({ ok: true });
   })
 );
 
@@ -166,7 +296,7 @@ staff.get(
   '/',
   wrap(async (req, res) => {
     const filter = {};
-    if (ORDER_STATUSES.includes(req.query.status)) filter.status = req.query.status;
+    if (ORDER_STATUSES.includes(req.query.status) || req.query.status === 'awaiting_payment') filter.status = req.query.status;
     else if (req.query.status === 'open') filter.status = { $in: ['placed', 'confirmed', 'ready'] };
     const q = str(req.query.q, 80);
     if (q) filter.$or = [{ number: contains(q) }, { 'customer.name': contains(q) }, { 'customer.phone': contains(q.replace(/\D/g, '') || q) }];
@@ -184,11 +314,21 @@ staff.patch(
     const status = req.body?.status;
     if (!ORDER_STATUSES.includes(status)) throw new HttpError(422, 'Unknown status');
     if (o.status === 'cancelled') throw new HttpError(409, 'This order was cancelled');
+    if (o.status === 'awaiting_payment' && status !== 'cancelled') throw new HttpError(409, 'This order hasn’t been paid yet');
+    const set = { status, updated_at: new Date() };
     if (status === 'cancelled') {
-      // Put the stock back.
-      await Promise.all(o.items.map((i) => db.products.updateOne({ _id: i.product_id }, { $inc: { stock: i.qty } })));
+      // Paid online: refund through Razorpay first, so a failed refund leaves the order as it was.
+      if (o.payment === 'online' && o.payment_status === 'paid') {
+        try {
+          const r = await razorpay.refund(o.razorpay_payment_id, o.total * 100);
+          Object.assign(set, { payment_status: 'refunded', refund_id: r.id, refunded_at: new Date() });
+        } catch (e) {
+          throw new HttpError(502, `The refund didn’t go through (${e.message}). The order hasn’t been cancelled — try again, or refund from the Razorpay dashboard.`);
+        }
+      }
+      await releaseStock(o);
     }
-    await db.orders.updateOne({ _id: o._id }, { $set: { status, updated_at: new Date() } });
+    await db.orders.updateOne({ _id: o._id }, { $set: set });
     res.json({ order: out(await db.orders.findOne({ _id: o._id })) });
   })
 );
@@ -285,4 +425,4 @@ admin.delete(
   })
 );
 
-module.exports = { pub, mine, staff, admin, CATEGORIES };
+module.exports = { pub, mine, staff, admin, webhook, expireUnpaidOrders, CATEGORIES };

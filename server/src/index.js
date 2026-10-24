@@ -15,6 +15,8 @@ app.use(cors(origins.length ? { origin: origins } : undefined));
 // Make sure the schema exists before the first query.
 app.use((req, res, next) => ready.then(() => next(), next));
 // Photo uploads arrive as base64 inside JSON, so this route gets a bigger limit.
+// Razorpay signs the raw body, so this route reads it before the JSON parser.
+app.use('/api/shop/razorpay/webhook', require('./routes/shop').webhook);
 app.use('/api/staff/attachments', express.json({ limit: '9mb' }));
 app.use('/api/admin/products', express.json({ limit: '5mb' }));
 app.use(express.json({ limit: '1mb' }));

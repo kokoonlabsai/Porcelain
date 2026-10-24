@@ -10,12 +10,23 @@ import ProductImage from '../components/ProductImage';
 import { SHOP_CATS } from './Shop';
 
 const ORDER_STATUS = {
+  awaiting_payment: { label: 'Awaiting payment', tone: 'grey' },
   placed: { label: 'New', tone: 'clay' },
   confirmed: { label: 'Confirmed', tone: 'blue' },
   ready: { label: 'Ready', tone: 'amber' },
   completed: { label: 'Completed', tone: 'green' },
   cancelled: { label: 'Cancelled', tone: 'grey' },
 };
+/** How the order is being paid for, as a badge. */
+function PaymentBadge({ o }) {
+  if (o.payment === 'online') {
+    if (o.payment_status === 'paid') return <Badge tone="green">Paid online</Badge>;
+    if (o.payment_status === 'refunded') return <Badge tone="grey">Refunded</Badge>;
+    return <Badge tone="grey">Not paid</Badge>;
+  }
+  return <Badge tone="blue">{o.payment === 'cod' ? 'Cash on delivery' : 'Pay at clinic'}</Badge>;
+}
+
 /** The one next step for an open order. */
 const NEXT = { placed: ['confirmed', 'Confirm'], confirmed: ['ready', 'Mark ready'], ready: ['completed', 'Mark completed'] };
 
@@ -29,7 +40,8 @@ export function ShopOrders() {
   useEffect(() => { const t = setTimeout(() => setDebounced(q.trim()), 250); return () => clearTimeout(t); }, [q]);
   const { data, error, loading, reload, setData } = useLoad(() => api('/staff/orders', { query: { status, q: debounced } }), [status, debounced]);
   const update = async (o, next) => {
-    if (next === 'cancelled' && !window.confirm(`Cancel order ${o.number}? The stock goes back on the shelf.`)) return;
+    const refundNote = o.payment === 'online' && o.payment_status === 'paid' ? ` ${inr(o.total)} will be refunded to the customer through Razorpay.` : '';
+    if (next === 'cancelled' && !window.confirm(`Cancel order ${o.number}? The stock goes back on the shelf.${refundNote}`)) return;
     try {
       const r = await api(`/staff/orders/${o.id}`, { method: 'PATCH', body: { status: next } });
       setData((d) => ({ ...d, orders: d.orders.map((x) => (x.id === o.id ? r.order : x)) }));
@@ -44,7 +56,7 @@ export function ShopOrders() {
       </div>
       <div className="row wrap between" style={{ gap: 12 }}>
         <div className="chips">
-          {[['open', 'Open'], ['completed', 'Completed'], ['cancelled', 'Cancelled'], ['', 'All']].map(([k, l]) => (
+          {[['open', 'Open'], ['completed', 'Completed'], ['awaiting_payment', 'Unpaid'], ['cancelled', 'Cancelled'], ['', 'All']].map(([k, l]) => (
             <button key={k} className={`chip ${status === k ? 'on' : ''}`} onClick={() => setStatus(k)}>{l}</button>
           ))}
         </div>
@@ -60,12 +72,12 @@ export function ShopOrders() {
               <div key={o.id} className="card order-card">
                 <div className="row between wrap" style={{ gap: 12 }}>
                   <div>
-                    <div className="row gap-6"><span className="strong">{o.number}</span><Badge tone={st.tone}>{st.label}</Badge></div>
+                    <div className="row gap-6 wrap"><span className="strong">{o.number}</span><Badge tone={st.tone}>{st.label}</Badge><PaymentBadge o={o} /></div>
                     <div className="small muted mt-4">{fmtDate(o.created_at)} · {o.customer.name} · {displayPhone(o.customer.phone)}</div>
                   </div>
                   <div className="row gap-6">
                     <a className="btn sm icon ghost" href={`tel:${o.customer.phone}`} title="Call"><Phone size={16} /></a>
-                    {o.status !== 'completed' && o.status !== 'cancelled' && <Button className="sm ghost danger" onClick={() => update(o, 'cancelled')}>Cancel</Button>}
+                    {!['completed', 'cancelled', 'awaiting_payment'].includes(o.status) && <Button className="sm ghost danger" onClick={() => update(o, 'cancelled')}>{o.payment_status === 'paid' ? 'Cancel & refund' : 'Cancel'}</Button>}
                     {next && <Button className="primary sm" onClick={() => update(o, next[0])}>{next[1]}</Button>}
                   </div>
                 </div>
@@ -74,11 +86,12 @@ export function ShopOrders() {
                 </div>
                 <div className="row between wrap mt-12" style={{ gap: 8 }}>
                   <span className="small muted row gap-6">
-                    {o.fulfilment === 'delivery' ? <><Truck size={15} />{[o.address.line, o.address.city, o.address.pincode].join(', ')} · cash on delivery</> : <><Store size={15} />Pick up · pay at the clinic</>}
+                    {o.fulfilment === 'delivery' ? <><Truck size={15} />{[o.address.line, o.address.city, o.address.pincode].join(', ')}</> : <><Store size={15} />Pick up at the clinic</>}
                   </span>
                   <b>{inr(o.total)}</b>
                 </div>
                 {o.notes && <div className="notice sun small mt-12">“{o.notes}”</div>}
+                {o.staff_note && <div className="notice red small mt-12">{o.staff_note}</div>}
               </div>
             );
           })}
@@ -221,12 +234,12 @@ export function PortalOrders() {
       <div className="page-head"><h1>My orders</h1><Link to="/shop" className="btn primary"><ShoppingBag size={17} />Shop</Link></div>
       {!data.orders.length ? <div className="card"><Empty icon={ShoppingBag} title="No orders yet" action={<Link to="/shop" className="btn primary">Browse the shop</Link>} /></div> : (
         <div className="stack gap-16">
-          {data.orders.map((o) => (
+          {data.orders.filter((o) => !(o.status === 'cancelled' && ['payment_abandoned', 'payment_timeout'].includes(o.cancel_reason))).map((o) => (
             <div key={o.id} className="card">
               <div className="row between"><span className="strong">{o.number}</span><Badge tone={ORDER_STATUS[o.status].tone}>{ORDER_STATUS[o.status].label}</Badge></div>
               <div className="small muted mt-4">{fmtDate(o.created_at)} · {o.fulfilment === 'delivery' ? 'Delivery' : 'Pick up at the clinic'}</div>
               <div className="order-lines mt-12">{o.items.map((i) => <div key={i.product_id} className="row between small"><span>{i.name} × {i.qty}</span><span>{inr(i.price * i.qty)}</span></div>)}</div>
-              <div className="row between mt-12"><span className="small muted">{o.fulfilment === 'delivery' ? 'Cash on delivery' : 'Pay at the clinic'}</span><b>{inr(o.total)}</b></div>
+              <div className="row between mt-12"><PaymentBadge o={o} /><b>{inr(o.total)}</b></div>
             </div>
           ))}
         </div>
