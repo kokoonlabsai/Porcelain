@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { ArrowLeft, ArrowRight, Check, CalendarPlus, MapPin, MessageCircle, Clock, UserRound, Phone, Mail, Sun, Sunset, Moon, CalendarX, Lock, ShieldCheck } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Check, CalendarPlus, MapPin, MessageCircle, Clock, UserRound, Phone, Mail, Sun, Sunset, Moon, CalendarX, Lock, ShieldCheck, IndianRupee } from 'lucide-react';
 import { api } from '../lib/api';
 import { loadRazorpay, payWithRazorpay } from '../lib/razorpay';
 import { inr } from '../lib/cart';
@@ -48,6 +48,14 @@ export default function Book({ inPortal = false }) {
       if (first) setDate(first.date);
     }).catch((e) => setError(e.message));
   }, []);
+
+  // The consultation fee for this date (free if it's a follow-up within the window for a logged-in patient).
+  const [fee, setFee] = useState(null);
+  useEffect(() => {
+    if (!date) return;
+    setFee(null);
+    api('/fee-quote', { query: { date } }).then((r) => setFee(r.fee)).catch(() => {});
+  }, [date, patient?.id]);
 
   useEffect(() => {
     if (!date) return;
@@ -192,6 +200,7 @@ export default function Book({ inPortal = false }) {
               <div><b>A {inr(deposit)} deposit secures this slot.</b> It’s adjusted against your bill, and refunded if you cancel at least {settings.deposit_refund_hours || 24} hours ahead.</div>
             </div>
           )}
+          {time && <FeeNote fee={fee} deposit={deposit} freeDays={Number(settings.consultation_free_days) || 0} />}
           <div className="row between mt-32">
             <Button className="ghost" onClick={() => setStep(0)}><ArrowLeft size={18} />Back</Button>
             <Button className="primary lg" disabled={!time} loading={busy && !!patient} onClick={goDetails}>
@@ -228,6 +237,32 @@ export default function Book({ inPortal = false }) {
         </form>
       )}
     </Wrapper>
+  );
+}
+
+function feeTitle(fee) {
+  if (fee.status === 'free_followup') return 'Free follow-up';
+  if (fee.status === 'paid' && fee.method === 'deposit') return `Consultation fee ${inr(fee.amount)} · covered by your deposit`;
+  if (fee.status === 'paid') return `Consultation fee ${inr(fee.amount)} · paid`;
+  return `Consultation fee ${inr(fee.amount)}`;
+}
+function feeHint(fee) {
+  if (fee.status === 'free_followup') return `No fee: this falls within the free follow-up period of your last consultation (until ${fmtDateLong(fee.free_until)}).`;
+  if (fee.status === 'due') return 'Payable at the clinic: cash, UPI or card.';
+  return '';
+}
+
+function FeeNote({ fee, deposit, freeDays }) {
+  if (!fee || fee.status === 'none') return null;
+  if (fee.status === 'free_followup') {
+    return <div className="fee-note mt-16"><IndianRupee size={18} /><div><b>Free follow-up.</b> {feeHint(fee).replace(/^No fee: t/, 'T')}</div></div>;
+  }
+  const covered = deposit >= fee.amount;
+  return (
+    <div className="fee-note mt-16">
+      <IndianRupee size={18} />
+      <div><b>Consultation fee {inr(fee.amount)}</b>{covered ? ', covered by your deposit.' : ', payable at the clinic.'}{freeDays > 0 && ` Follow-ups within ${freeDays} days are free.`}</div>
+    </div>
   );
 }
 
@@ -270,6 +305,9 @@ function Success({ res, settings, onLogin, inPortal, nav }) {
         <div className="summary-line"><ConcernIcon concern={a.concern} size={16} box={30} /><div className="strong">{concernLabel(a.concern)}</div></div>
         {a.deposit?.status === 'paid' && (
           <div className="summary-line"><Lock size={18} color="var(--green)" /><div><div className="strong">Deposit paid · {inr(a.deposit.amount)}</div><div className="small muted">Adjusted against your bill at the visit</div></div></div>
+        )}
+        {a.fee && a.fee.status !== 'none' && (
+          <div className="summary-line"><IndianRupee size={18} color="var(--brand)" /><div><div className="strong">{feeTitle(a.fee)}</div><div className="small muted">{feeHint(a.fee)}</div></div></div>
         )}
         {settings.address && <div className="summary-line"><MapPin size={18} color="var(--brand)" /><div className="small">{settings.address}{settings.maps_url && <> · <a className="link" href={settings.maps_url} target="_blank" rel="noreferrer">Directions</a></>}</div></div>}
       </div>

@@ -25,6 +25,7 @@ export function StaffToday() {
             <span><b>{d.today.waiting}</b> to come</span>
             <span><b>{d.today.completed}</b> seen</span>
             <Link to="/staff/pharmacy"><b>{d.pharmacy_pending}</b> at pharmacy</Link>
+            {d.fees_today?.total > 0 && <span><b>₹{d.fees_today.total.toLocaleString('en-IN')}</b> fees today</span>}
           </div>
         )}
       </div>
@@ -138,6 +139,16 @@ export function AppointmentRow({ a, onChange }) {
       onChange();
     } catch (e) { toast(e.message, 'err'); }
   };
+  const fee = a.fee && a.fee.status !== 'none' && (a.fee.status === 'paid' || !['cancelled', 'no_show'].includes(a.status)) ? a.fee : null;
+  const feeAction = async (action, method) => {
+    setMenu(false);
+    if (action === 'waive' && !window.confirm(`Waive the ₹${fee.amount.toLocaleString('en-IN')} consultation fee for ${firstName(a.name)}?`)) return;
+    try {
+      await api(`/staff/appointments/${a.id}/fee`, { method: 'POST', body: { action, method } });
+      if (action === 'collect') toast(`₹${fee.amount.toLocaleString('en-IN')} fee recorded`);
+      onChange();
+    } catch (e) { toast(e.message, 'err'); }
+  };
   const consult = () => nav(`/staff/visits/new?patient=${a.patient_id}&appointment=${a.id}`);
 
   // One clear action per row: doctors consult, reception checks people in.
@@ -155,6 +166,7 @@ export function AppointmentRow({ a, onChange }) {
       <div style={{ minWidth: 0 }}>
         <Link to={`/staff/patients/${a.patient_id}`} className="appt-name">{a.name}</Link>
         <div className="appt-note">{note}</div>
+        {fee && <FeeChip fee={fee} onCollect={(m) => feeAction('collect', m)} />}
         {depositText && <div className={`appt-deposit ${a.deposit.status}`}>₹{a.deposit.amount.toLocaleString('en-IN')} {depositText}{a.deposit.status === 'paid' && ['checked_in', 'booked'].includes(a.status) ? ' — adjust against the bill' : ''}</div>}
       </div>
       <div className="row acts gap-6" style={{ justifyContent: 'flex-end', position: 'relative' }}>
@@ -169,6 +181,8 @@ export function AppointmentRow({ a, onChange }) {
             <a href={`tel:${a.phone}`}>Call {firstName(a.name)}</a>
             {clinician && a.status === 'booked' && <button onClick={() => setStatus('checked_in')}>Check in</button>}
             {!clinician && active && !a.visit_id && <button onClick={consult}>Start consultation</button>}
+            {clinician && fee && ['due', 'free_followup'].includes(fee.status) && <button onClick={() => feeAction('waive')}>Waive fee</button>}
+            {fee && (fee.status === 'waived' || (fee.status === 'paid' && fee.method !== 'deposit')) && <button onClick={() => feeAction('undo')}>Undo fee {fee.status === 'paid' ? 'payment' : 'waiver'}</button>}
             {a.status !== 'booked' && <button onClick={() => setStatus('booked')}>Mark as booked</button>}
             {a.status !== 'completed' && <button onClick={() => setStatus('completed')}>Mark as seen</button>}
             {a.status !== 'no_show' && <button onClick={() => setStatus('no_show')}>No-show</button>}
@@ -176,6 +190,25 @@ export function AppointmentRow({ a, onChange }) {
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+const METHOD_LABEL = { cash: 'cash', upi: 'UPI', card: 'card', deposit: 'deposit', online: 'online', other: 'other' };
+
+/** The consultation fee on an appointment row; a due fee opens Cash / UPI / Card to record it. */
+function FeeChip({ fee, onCollect }) {
+  const [open, setOpen] = useState(false);
+  const amount = `₹${(fee.amount || 0).toLocaleString('en-IN')}`;
+  if (fee.status === 'paid') return <div className="appt-fee paid">{amount} fee paid · {METHOD_LABEL[fee.method] || fee.method}</div>;
+  if (fee.status === 'waived') return <div className="appt-fee muted">Fee waived</div>;
+  if (fee.status === 'free_followup') return <div className="appt-fee muted">Free follow-up · until {fmtDate(fee.free_until)}</div>;
+  if (!open) return <button className="appt-fee due" onClick={() => setOpen(true)}>{amount} fee due · Collect</button>;
+  return (
+    <div className="appt-fee-pick">
+      <span className="tiny muted strong">{amount} paid by</span>
+      {['cash', 'upi', 'card'].map((m) => <button key={m} className="btn sm" onClick={() => { setOpen(false); onCollect(m); }}>{METHOD_LABEL[m][0].toUpperCase() + METHOD_LABEL[m].slice(1)}</button>)}
+      <button className="link tiny" onClick={() => setOpen(false)}>Cancel</button>
     </div>
   );
 }

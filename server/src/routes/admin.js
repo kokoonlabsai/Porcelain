@@ -94,7 +94,7 @@ router.put(
       Object.keys(DEFAULT_SETTINGS).filter((k) => b[k] !== undefined).map((k) => [k, String(b[k] ?? '').trim().slice(0, 1000)])
     );
     for (const [k, v] of Object.entries(updates)) {
-      if (['booking_days_ahead', 'min_notice_minutes', 'shop_delivery_fee', 'shop_free_delivery_over', 'deposit_amount', 'deposit_refund_hours'].includes(k) && !/^\d{1,6}$/.test(v)) throw new HttpError(422, 'Use a whole number');
+      if (['booking_days_ahead', 'min_notice_minutes', 'shop_delivery_fee', 'shop_free_delivery_over', 'deposit_amount', 'deposit_refund_hours', 'consultation_fee', 'consultation_free_days'].includes(k) && !/^\d{1,6}$/.test(v)) throw new HttpError(422, 'Use a whole number');
       if (['shop_delivery', 'deposit_procedures', 'deposit_weekends'].includes(k) && !['0', '1'].includes(v)) throw new HttpError(422, 'Use 1 for on or 0 for off');
       if (k === 'clinic_name' && !v) throw new HttpError(422, 'The clinic needs a name');
     }

@@ -63,6 +63,13 @@ The website and clinic app for Porcelain Skin Clinic, a dermatology and aestheti
 - **Patient portal:** patients see their orders there. Customers get an email confirmation if they gave an email.
 - **Demo products:** `seed:demo` adds sample products with drawn placeholders instead of photos.
 
+### Consultation fee
+- Every consultation is charged (₹500 by default). A follow-up within **7 days** of a paid consultation is free.
+- Change both under **Admin → Clinic details** (fee 0 = no fee; days 0 = every visit is charged).
+- Patients see the fee, or "Free follow-up", while booking and in their portal. Fees are paid at the clinic.
+- On **Today**, reception taps "₹500 fee due · Collect" and picks cash, UPI or card. Doctors and admins can waive a fee from the row's menu, and any recorded fee or waiver can be undone.
+- A paid booking deposit covers the fee. The day's total collected shows at the top of **Today**.
+
 ### Deposits, prescribed products and packages
 - **Booking deposit:** a ₹1,000 Razorpay deposit secures **procedures** and **weekend** slots booked online.
   - The slot is held for 15 minutes while the patient pays, then confirmed once the payment signature checks out.

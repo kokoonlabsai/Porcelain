@@ -88,6 +88,7 @@ async function createAppointment(input, actor) {
     description,
     status: deposit ? 'pending_payment' : forStaff && input.check_in ? 'checked_in' : 'booked',
     deposit: deposit ? { amount: deposit, status: 'pending' } : null,
+    fee: await require('./fees').quote(patient._id, date),
     source: forStaff ? (input.source === 'phone' ? 'phone' : 'walk_in') : 'online',
     reminder_sent: false,
     created_at: new Date(),

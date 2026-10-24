@@ -1,6 +1,7 @@
 const express = require('express');
 const { db, oid, out, getSettings } = require('../db');
 const deposits = require('../deposits');
+const fees = require('../fees');
 const { packagesForPatient } = require('./packages');
 const { HttpError, wrap, requireAuth, today, toMinutes } = require('../util');
 const { visitDetails, ATTACHMENT_FIELDS } = require('../records');
@@ -17,6 +18,7 @@ router.get(
       .find({ patient_id: id, date: { $gte: today() }, status: { $in: ['booked', 'checked_in'] } })
       .sort({ date: 1, start_time: 1 })
       .toArray();
+    for (const a of upcoming) a.fee = await fees.refresh(a);
     const lastVisit = await db.visits.find({ patient_id: id }).sort({ date: -1, _id: -1 }).limit(1).next();
     const latest = lastVisit ? await visitDetails(lastVisit, { forPatient: true }) : null;
     const [pending] = await db.visits.aggregate([

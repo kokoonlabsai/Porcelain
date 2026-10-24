@@ -48,6 +48,8 @@ async function markDepositPaid(appt, paymentId, via) {
     }
   );
   if (!r.modifiedCount) return false;
+  // The deposit covers the consultation fee.
+  await require('./fees').refresh(await db.appointments.findOne({ _id: appt._id }));
   const patient = await db.users.findOne({ _id: appt.patient_id });
   if (patient?.email) mail.bookingConfirmation(patient, { ...appt, status: 'booked' }).catch(() => {});
   return true;

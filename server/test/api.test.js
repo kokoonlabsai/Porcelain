@@ -521,3 +521,53 @@ test('prescribed products: the doctor finds shop items, and the patient sees the
   assert.equal(seen.items[0].product.slug, product.slug);
   assert.equal(seen.items[1].product, undefined);
 });
+
+test('consultation fee: charged, free for follow-ups within the window, then charged again', async () => {
+  await call('PUT', '/api/admin/settings', { token: admin, body: { consultation_fee: '600', consultation_free_days: '7' } });
+  await (call('POST', '/api/staff/patients', { token: reception, body: { name: 'Fee Test', phone: '9877100001' } }));
+  const book = (date, time) => call('POST', '/api/staff/appointments', { token: reception, body: { name: 'Fee Test', phone: '9877100001', concern: 'skin', date, start_time: time } });
+  const d0 = addDays(today(), 20);
+  const first = await book(d0, '10:00');
+  assert.equal(first.body.appointment.fee.status, 'due');
+  assert.equal(first.body.appointment.fee.amount, 600);
+
+  // Reception collects it; a doctor-only action is refused for reception.
+  assert.equal((await call('POST', `/api/staff/appointments/${first.body.appointment.id}/fee`, { token: reception, body: { action: 'collect', method: 'bitcoin' } })).status, 422);
+  const paid = await call('POST', `/api/staff/appointments/${first.body.appointment.id}/fee`, { token: reception, body: { action: 'collect', method: 'upi' } });
+  assert.equal(paid.body.fee.status, 'paid');
+  assert.equal((await call('POST', `/api/staff/appointments/${first.body.appointment.id}/fee`, { token: reception, body: { action: 'collect', method: 'cash' } })).status, 409);
+
+  // Within 7 days of the paid one: free. Day 8: charged again.
+  const follow = await book(addDays(d0, 5), '10:00');
+  assert.equal(follow.body.appointment.fee.status, 'free_followup');
+  assert.equal(follow.body.appointment.fee.free_until, addDays(d0, 7));
+  const later = await book(addDays(d0, 8), '11:00');
+  assert.equal(later.body.appointment.fee.status, 'due');
+
+  // Undoing the first payment makes the follow-up chargeable again (fees refresh in the day list).
+  await call('POST', `/api/staff/appointments/${first.body.appointment.id}/fee`, { token: reception, body: { action: 'undo' } });
+  const list = (await call('GET', `/api/staff/appointments?date=${addDays(d0, 5)}`, { token: reception })).body.appointments;
+  assert.equal(list.find((a) => a.id === follow.body.appointment.id).fee.status, 'due');
+
+  // Waiving is for doctors and admins.
+  assert.equal((await call('POST', `/api/staff/appointments/${later.body.appointment.id}/fee`, { token: reception, body: { action: 'waive' } })).status, 403);
+  const w = await call('POST', `/api/staff/appointments/${later.body.appointment.id}/fee`, { token: doctor, body: { action: 'waive', reason: 'Family' } });
+  assert.equal(w.body.fee.status, 'waived');
+
+  // Anyone without an account is quoted the full fee.
+  const q = (await call('GET', `/api/fee-quote?date=${d0}`)).body.fee;
+  assert.equal(q.amount, 600);
+});
+
+test('consultation fee: a paid booking deposit covers it', async () => {
+  const crypto = require('crypto');
+  await call('PUT', '/api/admin/settings', { token: admin, body: { deposit_procedures: '1', consultation_fee: '600' } });
+  const day = nextDate(12, (d) => d >= 1 && d <= 5);
+  const r = await call('POST', '/api/appointments', { body: { name: 'Dep Fee', phone: '9877100002', concern: 'procedure', date: day, start_time: '11:00' } });
+  const o = r.body.razorpay.order_id;
+  const sig = crypto.createHmac('sha256', 'rzp_test_secret').update(`${o}|pay_f1`).digest('hex');
+  const v = await call('POST', `/api/appointments/${r.body.appointment.id}/deposit/verify`, { body: { razorpay_order_id: o, razorpay_payment_id: 'pay_f1', razorpay_signature: sig } });
+  assert.equal(v.body.appointment.fee.status, 'paid');
+  assert.equal(v.body.appointment.fee.method, 'deposit');
+  await call('PUT', '/api/admin/settings', { token: admin, body: { deposit_procedures: '0' } });
+});

@@ -7,6 +7,7 @@ const { createAppointment } = require('../appointments');
 const mail = require('../mail');
 const rzp = require('../razorpay');
 const deposits = require('../deposits');
+const fees = require('../fees');
 const { HttpError, wrap, optionalAuth, signToken, publicUser, isISODate } = require('../util');
 
 const router = express.Router();
@@ -34,6 +35,18 @@ router.get(
     if (!isISODate(date)) throw new HttpError(422, 'Pick a valid date');
     const forStaff = !!req.user && req.user.role !== 'patient' && req.query.staff === '1';
     res.json({ date, slots: await slotsFor(date, { forStaff }) });
+  })
+);
+
+/** What a consultation on a date would cost: logged-in patients get their own follow-up window. */
+router.get(
+  '/fee-quote',
+  optionalAuth(),
+  wrap(async (req, res) => {
+    const date = isISODate(req.query.date) ? req.query.date : null;
+    if (!date) throw new HttpError(422, 'Pick a valid date');
+    const patientId = req.user && req.user.role === 'patient' ? req.user._id : null;
+    res.json({ fee: out(await fees.quote(patientId, date)) });
   })
 );
 

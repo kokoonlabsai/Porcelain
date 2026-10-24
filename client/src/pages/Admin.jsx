@@ -389,6 +389,8 @@ const SETTINGS_FIELDS = [
   ['email', 'Clinic email'],
   ['address', 'Address'],
   ['maps_url', 'Google Maps link'],
+  ['consultation_fee', 'Consultation fee (₹)', 'Collected at the clinic. 0 = no fee'],
+  ['consultation_free_days', 'Free follow-ups within … days of a paid consultation', 'e.g. 7. 0 = every visit is charged'],
   ['deposit_amount', 'Booking deposit (₹)', 'Taken through Razorpay for online bookings below. 0 = no deposits'],
   ['deposit_procedures', 'Deposit for procedures', '1 = yes, 0 = no'],
   ['deposit_weekends', 'Deposit for weekend slots', '1 = yes, 0 = no'],
@@ -433,7 +435,7 @@ export function ClinicSettings() {
         {SETTINGS_FIELDS.map(([k, label, hint]) => (
           <Field key={k} label={label} hint={hint}>
             {['address', 'doctor_bio', 'doctor2_bio', 'highlights', 'doctor_awards', 'doctor2_awards', 'founders_quote'].includes(k) ? <textarea className="input" rows={['highlights', 'doctor_awards', 'doctor2_awards', 'founders_quote'].includes(k) ? 4 : 2} value={f[k]} onChange={(e) => setF({ ...f, [k]: e.target.value })} />
-              : <input className="input" value={f[k]} onChange={(e) => setF({ ...f, [k]: e.target.value })} inputMode={['booking_days_ahead', 'min_notice_minutes', 'shop_delivery_fee', 'shop_free_delivery_over', 'shop_delivery', 'deposit_amount', 'deposit_procedures', 'deposit_weekends', 'deposit_refund_hours'].includes(k) ? 'numeric' : undefined} />}
+              : <input className="input" value={f[k]} onChange={(e) => setF({ ...f, [k]: e.target.value })} inputMode={['booking_days_ahead', 'min_notice_minutes', 'consultation_fee', 'consultation_free_days', 'shop_delivery_fee', 'shop_free_delivery_over', 'shop_delivery', 'deposit_amount', 'deposit_procedures', 'deposit_weekends', 'deposit_refund_hours'].includes(k) ? 'numeric' : undefined} />}
           </Field>
         ))}
         <div><Button className="primary" loading={busy}>Save</Button></div>

@@ -221,7 +221,7 @@ function UpcomingAppt({ a, onChange }) {
       <CalTile date={a.date} />
       <div className="grow">
         <div className="strong">{relDay(a.date)} · {fmtTime(a.start_time)}</div>
-        <div className="small muted">{concernLabel(a.concern)}{a.deposit?.status === 'paid' ? ` · ${inr(a.deposit.amount)} deposit paid` : ''}</div>
+        <div className="small muted">{concernLabel(a.concern)}{a.deposit?.status === 'paid' ? ` · ${inr(a.deposit.amount)} deposit paid` : ''}{feeText(a.fee)}</div>
         <div className="row gap-16 mt-4">
           <button className="link small" onClick={() => downloadIcs({ title: `Appointment at ${settings.clinic_name}`, date: a.date, start: a.start_time, end: a.end_time, location: settings.address })}>Add to calendar</button>
           {a.status === 'booked' && <button className="link small" style={{ color: 'var(--red)' }} onClick={() => setConfirm(true)}>Cancel</button>}
@@ -442,3 +442,12 @@ export function PortalProfile() {
   );
 }
 
+
+/** " · ₹500 consultation fee at the clinic", " · free follow-up", … for an upcoming appointment. */
+function feeText(fee) {
+  if (!fee || fee.status === 'none') return '';
+  if (fee.status === 'free_followup') return ' · free follow-up';
+  if (fee.status === 'waived') return '';
+  if (fee.status === 'paid') return fee.method === 'deposit' ? ' · fee covered by deposit' : ' · fee paid';
+  return ` · ${inr(fee.amount)} consultation fee, pay at the clinic`;
+}

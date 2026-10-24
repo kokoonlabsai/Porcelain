@@ -10,6 +10,7 @@ const { visitDetails, ATTACHMENT_FIELDS } = require('../records');
 const { applyPackageSessions, packagesForPatient } = require('./packages');
 const mail = require('../mail');
 const deposits = require('../deposits');
+const fees = require('../fees');
 const {
   HttpError, wrap, requireStaff, requireAuth, today, addDays, isISODate, isTime, str, isEmail, tempPassword, publicUser,
 } = require('../util');
@@ -47,6 +48,12 @@ router.get(
       if (u) followUps.push({ visit_id: String(v._id), follow_up_date: v.follow_up_date, diagnosis: v.diagnosis, patient_id: String(u._id), name: u.name, phone: u.phone });
     }
     const since = new Date(Date.now() - 30 * 86_400_000);
+    const startOfDay = new Date();
+    startOfDay.setHours(0, 0, 0, 0);
+    const [collected] = await db.appointments.aggregate([
+      { $match: { 'fee.status': 'paid', 'fee.paid_at': { $gte: startOfDay }, 'fee.method': { $ne: 'deposit' } } },
+      { $group: { _id: null, total: { $sum: '$fee.amount' }, count: { $sum: 1 } } },
+    ]).toArray();
     res.json({
       today: {
         total: (counts.booked || 0) + (counts.checked_in || 0) + (counts.completed || 0),
@@ -57,6 +64,7 @@ router.get(
       pharmacy_pending: pharmacy,
       follow_ups: followUps,
       new_patients_30d: await db.users.countDocuments({ role: 'patient', created_at: { $gte: since } }),
+      fees_today: { total: collected?.total || 0, count: collected?.count || 0 },
     });
   })
 );
@@ -84,6 +92,8 @@ router.get(
       },
       { $project: { u: 0, v: 0 } },
     ]).toArray();
+    // Fees can change after booking (an earlier visit got paid, a deposit arrived), so refresh open ones.
+    for (const r of rows) if (!['cancelled', 'no_show', 'pending_payment'].includes(r.status)) r.fee = await fees.refresh(r);
     res.json({ appointments: out(rows) });
   })
 );
@@ -97,6 +107,33 @@ router.post(
       mail.bookingConfirmation(patient, appointment).catch(() => {});
     }
     res.status(201).json({ appointment: out(appointment), patient: publicUser(patient) });
+  })
+);
+
+/** Record the consultation fee as paid (reception), or waive it (doctors and admins). */
+router.post(
+  '/appointments/:id/fee',
+  wrap(async (req, res) => {
+    const a = await db.appointments.findOne({ _id: oid(req.params.id) });
+    if (!a) throw new HttpError(404, 'Appointment not found');
+    const fee = await fees.refresh(a);
+    const { action, method } = req.body || {};
+    const now = new Date();
+    if (action === 'collect') {
+      if (fee.status !== 'due') throw new HttpError(409, fee.status === 'paid' ? 'The fee is already paid' : 'There’s no fee to collect for this visit');
+      if (!fees.PAY_METHODS.includes(method) || method === 'deposit') throw new HttpError(422, 'How was it paid?');
+      await db.appointments.updateOne({ _id: a._id }, { $set: { fee: { amount: fee.amount, status: 'paid', method, paid_at: now, collected_by: req.user._id } } });
+    } else if (action === 'waive') {
+      if (!canSeePrivate(req.user)) throw new HttpError(403, 'Only doctors and admins can waive a fee');
+      if (fee.status === 'paid') throw new HttpError(409, 'The fee is already paid');
+      await db.appointments.updateOne({ _id: a._id }, { $set: { fee: { amount: fee.amount, status: 'waived', waived_at: now, waived_by: req.user._id, reason: str(req.body.reason, 200) } } });
+    } else if (action === 'undo') {
+      if (!['paid', 'waived'].includes(fee.status) || fee.method === 'deposit') throw new HttpError(409, 'Nothing to undo');
+      await db.appointments.updateOne({ _id: a._id }, { $set: { fee: { amount: fee.amount, status: 'due' } } });
+    } else {
+      throw new HttpError(422, 'Unknown action');
+    }
+    res.json({ fee: out(await fees.refresh(await db.appointments.findOne({ _id: a._id }))) });
   })
 );
 

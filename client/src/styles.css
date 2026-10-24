@@ -984,3 +984,13 @@ button.caps-link { background: none; border: 0; padding: 0; cursor: pointer; }
 .gap-12 { gap: 12px; }
 .rx-row .med .suggest { min-width: 360px; right: auto; }
 @media (max-width: 620px) { .rx-row .med .suggest { min-width: 0; right: 0; } }
+
+/* Consultation fee on appointment rows and in the booking flow */
+.appt-fee { margin-top: 4px; margin-right: 6px; display: inline-block; font: inherit; font-size: 12.5px; font-weight: 600; padding: 2px 8px; border: 0; background: var(--bg-2); color: var(--muted); }
+.appt-fee.paid { background: var(--green-soft); color: var(--green); }
+.appt-fee.due { background: var(--clay-soft); color: #7d6436; cursor: pointer; }
+.appt-fee.due:hover { text-decoration: underline; }
+.appt-fee-pick { margin-top: 6px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.appt-fee-pick .btn { height: 30px; }
+.fee-note { display: flex; gap: 12px; align-items: flex-start; padding: 14px 18px; background: var(--surface-2); border: 1px solid var(--line); color: var(--ink-2); font-size: 15px; line-height: 1.55; }
+.fee-note > svg { color: var(--brand); flex-shrink: 0; margin-top: 3px; }
