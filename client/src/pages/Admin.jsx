@@ -333,8 +333,13 @@ function ArticleEditor({ id, onClose, onSaved }) {
 const SETTINGS_FIELDS = [
   ['clinic_name', 'Clinic name'],
   ['tagline', 'Tagline', 'Shown on the home page'],
+  ['city', 'City', 'Shown on the home page'],
   ['doctor_name', 'Lead doctor’s name'],
-  ['doctor_credentials', 'Doctor’s qualifications', 'Printed on prescriptions'],
+  ['doctor_credentials', 'Lead doctor’s qualifications', 'Printed on prescriptions'],
+  ['doctor_bio', 'Lead doctor — one-line introduction'],
+  ['doctor2_name', 'Second doctor’s name', 'Leave empty if there’s only one doctor'],
+  ['doctor2_credentials', 'Second doctor’s qualifications'],
+  ['doctor2_bio', 'Second doctor — one-line introduction'],
   ['phone', 'Clinic phone'],
   ['whatsapp', 'WhatsApp number', 'With country code, e.g. +91 98765 43210'],
   ['email', 'Clinic email'],
@@ -368,7 +373,7 @@ export function ClinicSettings() {
       <form className="card stack gap-16" onSubmit={save}>
         {SETTINGS_FIELDS.map(([k, label, hint]) => (
           <Field key={k} label={label} hint={hint}>
-            {k === 'address' ? <textarea className="input" rows={2} value={f[k]} onChange={(e) => setF({ ...f, [k]: e.target.value })} />
+            {['address', 'doctor_bio', 'doctor2_bio'].includes(k) ? <textarea className="input" rows={2} value={f[k]} onChange={(e) => setF({ ...f, [k]: e.target.value })} />
               : <input className="input" value={f[k]} onChange={(e) => setF({ ...f, [k]: e.target.value })} inputMode={['booking_days_ahead', 'min_notice_minutes'].includes(k) ? 'numeric' : undefined} />}
           </Field>
         ))}

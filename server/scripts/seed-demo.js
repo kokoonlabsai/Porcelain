@@ -1,7 +1,7 @@
 /**
  * Demo data: staff logins, patients, today's appointments, past visits with prescriptions.
  *   Admin     +91 90000 00001 / admin123
- *   Doctor    +91 90000 00002 / doctor123
+ *   Doctors   +91 90000 00002 and +91 90000 00004 / doctor123
  *   Reception +91 90000 00003 / reception123
  *   Patient   +91 98111 11111 / patient123
  */
@@ -36,15 +36,19 @@ async function main() {
   await ready;
   await db.settings.updateOne({ _id: 'clinic' }, {
     $set: {
-      clinic_name: 'Lumen Skin & Hair Clinic',
-      doctor_name: 'Dr. Anjali Mehta',
-      phone: '+91 80 4123 4567',
-      whatsapp: '+91 98450 00000',
-      address: '2nd floor, 14 Residency Road, Bengaluru 560025',
+      clinic_name: 'Porcelain Skin Clinic',
+      city: 'Bhopal',
+      doctor_name: 'Dr. Mayank Bajpai',
+      doctor_credentials: 'MBBS, MD (Dermatology)',
+      doctor2_name: 'Dr. Nitya Bajpai',
+      doctor2_credentials: 'MBBS, Fellow in Aesthetic Medicine',
+      address: 'Bhopal, Madhya Pradesh',
+      maps_url: 'https://www.google.com/maps/search/?api=1&query=23.207751,77.4320633',
     },
   });
   await user('Clinic Admin', '+919000000001', 'admin', 'admin123');
-  const doctor = await user('Dr. Anjali Mehta', '+919000000002', 'doctor', 'doctor123');
+  const doctor = await user('Dr. Mayank Bajpai', '+919000000002', 'doctor', 'doctor123');
+  await user('Dr. Nitya Bajpai', '+919000000004', 'doctor', 'doctor123');
   await user('Priya (Reception)', '+919000000003', 'reception', 'reception123');
 
   const asha = await user('Asha Rao', '+919811111111', 'patient', 'patient123', { email: 'asha@example.com', gender: 'Female', dob: '1994-06-12' });
@@ -93,7 +97,7 @@ async function main() {
       });
     }
   }
-  console.log('Demo data ready. Admin +91 90000 00001 / admin123 · Doctor 90000 00002 / doctor123 · Reception 90000 00003 / reception123 · Patient 98111 11111 / patient123');
+  console.log('Demo data ready. Admin +91 90000 00001 / admin123 · Doctors 90000 00002, 90000 00004 / doctor123 · Reception 90000 00003 / reception123 · Patient 98111 11111 / patient123');
 }
 
 main().then(() => client.close(), (e) => { console.error(e); return client.close().then(() => process.exit(1)); });

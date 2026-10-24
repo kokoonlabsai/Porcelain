@@ -1,138 +1,224 @@
 import { Link, useNavigate } from 'react-router-dom';
-import { ArrowRight, CalendarCheck2, Stethoscope, Smartphone, BellRing, Pill, ShieldCheck, Star } from 'lucide-react';
+import { ArrowRight, ArrowUpRight, MapPin, Phone, MessageCircle } from 'lucide-react';
 import { useApp, useLoad } from '../lib/store';
 import { api } from '../lib/api';
-import { CONCERNS, catLabel } from '../lib/format';
-import { ConcernIcon, CAT_COLORS } from '../components/ui';
-import { Hours } from '../components/Layouts';
+import { catLabel, WEEKDAYS, fmtTime } from '../lib/format';
+import { CAT_COLORS } from '../components/ui';
+import Facade from '../components/Facade';
+
+const ROMAN = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII'];
+
+const TREATMENTS = [
+  { concern: 'skin', title: 'Clinical dermatology', text: 'Acne, pigmentation, eczema, allergies, nails and moles — diagnosed properly, treated patiently.' },
+  { concern: 'hair', title: 'Hair & scalp', text: 'Hair fall, thinning, dandruff and alopecia. Blood work when it matters, PRP when it helps.' },
+  { concern: 'procedure', title: 'Aesthetic medicine', text: 'Skin boosters, anti-ageing and subtle refinements. You should look rested, never “done”.' },
+  { concern: 'procedure', title: 'Lasers & peels', text: 'Laser hair reduction, chemical peels, microneedling and acne-scar programmes.' },
+  { concern: 'wellness', title: 'Skin wellness', text: 'A routine built for your skin and your climate — and the reasons behind every step.' },
+];
+
+const RITUAL = [
+  { t: 'Consultation', d: 'Unhurried time with your doctor. The cause first, then the plan.' },
+  { t: 'Your prescription, on your phone', d: 'Medicines, doses and advice are saved to your private record the moment you’re seen.' },
+  { t: 'Collected downstairs', d: 'The pharmacy already has your prescription. Simply give your name.' },
+  { t: 'A gentle reminder', d: 'We tell you when your follow-up is due — and you book it in a tap.' },
+];
+
+const MARQUEE = ['Clinical dermatology', 'Acne & scars', 'Hair restoration', 'Pigmentation', 'Laser', 'Chemical peels', 'Skin boosters', 'PRP', 'Medi-facials'];
 
 export default function Home() {
   const { settings, clinic } = useApp();
   const nav = useNavigate();
   const { data } = useLoad(() => api('/articles'), []);
   const articles = data?.articles || [];
-  const myths = articles.filter((a) => a.category === 'myths').slice(0, 3);
-  const procedures = articles.filter((a) => a.category === 'procedures').slice(0, 6);
+  const journal = [
+    ...articles.filter((a) => a.category === 'procedures').slice(0, 2),
+    ...articles.filter((a) => a.category === 'myths').slice(0, 1),
+  ];
+  const brandWord = (settings.clinic_name || 'Porcelain').split(/\s+/)[0].toUpperCase();
+  const doctors = [
+    { name: settings.doctor_name, cred: settings.doctor_credentials, bio: settings.doctor_bio },
+    { name: settings.doctor2_name, cred: settings.doctor2_credentials, bio: settings.doctor2_bio },
+  ].filter((d) => d.name);
 
   return (
     <>
-      <section className="hero">
-        <div className="contain grid g-2" style={{ gap: 40, alignItems: 'center' }}>
-          <div className="fade-in">
-            <div className="eyebrow">{settings.doctor_name} · {settings.doctor_credentials}</div>
-            <h1 className="mt-12">Healthy skin and hair, <em>explained</em> and cared for.</h1>
-            <p className="lead">{settings.tagline}. Book in under a minute, get your prescription on your phone, and we’ll remind you when it’s time to come back.</p>
-            <div className="row wrap mt-24">
-              <Link to="/book" className="btn primary lg">Book an appointment <ArrowRight size={18} /></Link>
-              <Link to="/learn" className="btn lg">Read our guides</Link>
-            </div>
-            <div className="row wrap mt-24 small muted gap-16">
-              <span className="row gap-6"><ShieldCheck size={16} color="var(--brand)" />Your records stay private</span>
-              <span className="row gap-6"><Smartphone size={16} color="var(--brand)" />No app download needed</span>
+      {/* ---------- Hero ---------- */}
+      <section className="lux-hero">
+        <div className="contain grid g-2 hero-grid">
+          <div className="hero-copy">
+            <div className="eyebrow reveal">Dermatology · Aesthetic medicine{settings.city ? ` · ${settings.city}` : ''}</div>
+            <h1 className="mt-24 reveal d1">The art of <em>healthy</em> skin.</h1>
+            <p className="lead reveal d2">{settings.tagline}. Doctors who explain, prescriptions you keep on your phone, and a reminder when it’s time to return.</p>
+            <div className="row wrap mt-32 reveal d3" style={{ gap: 14 }}>
+              <Link to="/book" className="btn primary lg">Book a consultation</Link>
+              <a href="#treatments" className="btn ghost lg">Treatments <ArrowRight size={16} /></a>
             </div>
           </div>
-          <div className="hero-art fade-in" aria-hidden="true">
-            <svg viewBox="0 0 400 420" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }} preserveAspectRatio="xMidYMid slice">
-              <circle cx="210" cy="200" r="120" fill="#F7F1E8" />
-              <path d="M210 110c-34 38-58 70-58 101a58 58 0 0 0 116 0c0-31-24-63-58-101Z" fill="#2F5D50" opacity=".9" />
-              <path d="M210 160v100M210 200l-22-18M210 226l22-18" stroke="#F7F1E8" strokeWidth="7" strokeLinecap="round" fill="none" />
-              <circle cx="96" cy="96" r="26" fill="#C9785D" opacity=".25" />
-              <circle cx="330" cy="330" r="40" fill="#2F5D50" opacity=".12" />
-            </svg>
-            <div className="float" style={{ top: 28, left: 22 }}>
-              <div className="row"><CalendarCheck2 size={20} color="var(--brand)" /><div><div className="tiny muted">Next visit</div><div className="strong small">Tomorrow · 11:30 AM</div></div></div>
-            </div>
-            <div className="float" style={{ bottom: 92, right: 18 }}>
-              <div className="row"><Pill size={20} color="var(--clay)" /><div><div className="tiny muted">Prescription</div><div className="strong small">Ready to collect</div></div></div>
-            </div>
-            <div className="float" style={{ bottom: 22, left: 30 }}>
-              <div className="row"><BellRing size={20} color="var(--sun)" /><div><div className="tiny muted">Reminder</div><div className="strong small">Follow-up due in 3 days</div></div></div>
+          <div className="facade-wrap reveal d2"><Facade name={brandWord} /></div>
+        </div>
+      </section>
+
+      <div className="marquee" aria-hidden="true">
+        <div className="track">{[...MARQUEE, ...MARQUEE].map((t, i) => <span key={i}>{t}</span>)}</div>
+      </div>
+
+      {/* ---------- La maison ---------- */}
+      <section className="lux-section">
+        <div className="contain grid g-2" style={{ gap: 64, alignItems: 'start' }}>
+          <div>
+            <div className="eyebrow">La maison</div>
+            <h2 className="lux-title mt-16">Medicine first.<br /><em>Beauty,</em> naturally.</h2>
+          </div>
+          <div className="stack gap-24">
+            <p className="lux-lead">Behind a navy door is a clinic run by doctors, not salespeople. Every treatment starts with a diagnosis, every plan is explained in plain words, and nothing is recommended that your skin doesn’t need.</p>
+            <div className="grid g-3 stats-3" style={{ gap: 0, borderTop: '1px solid var(--line-strong)' }}>
+              {[['MD', 'Dermatologist-led'], ['1 : 1', 'Time with your doctor'], ['24/7', 'Your records, online']].map(([v, l]) => (
+                <div key={l} style={{ padding: '20px 16px 0 0' }}>
+                  <div className="serif" style={{ fontSize: 34, color: 'var(--brand)' }}>{v}</div>
+                  <div className="small muted">{l}</div>
+                </div>
+              ))}
             </div>
           </div>
         </div>
       </section>
 
-      <section className="section" style={{ paddingTop: 24 }}>
-        <div className="contain">
-          <div className="section-head"><h2>What brings you in?</h2></div>
-          <div className="grid g-4">
-            {CONCERNS.filter((c) => c.id !== 'other').map((c) => (
-              <button key={c.id} className="concern-card" onClick={() => nav(`/book?concern=${c.id}`)}>
-                <ConcernIcon concern={c.id} />
-                <h3>{c.label}</h3>
-                <p className="small muted">{c.hint}</p>
-                <span className="link small row gap-4">Book for {c.label.toLowerCase()} <ArrowRight size={14} /></span>
+      {/* ---------- Doctors ---------- */}
+      {doctors.length > 0 && (
+        <section className="lux-section" style={{ paddingTop: 0 }}>
+          <div className="contain">
+            <div className="row between wrap" style={{ marginBottom: 32 }}>
+              <div>
+                <div className="eyebrow">Your doctors</div>
+                <h2 className="lux-title mt-16">In <em>expert</em> hands</h2>
+              </div>
+            </div>
+            {doctors.map((d) => {
+              const initial = d.name.replace(/^dr\.?\s+/i, '').trim()[0] || 'P';
+              return (
+                <div key={d.name} className="doctor">
+                  <div className="arch">{initial}</div>
+                  <div style={{ paddingTop: 8 }}>
+                    <h3>{d.name}</h3>
+                    <div className="eyebrow mt-8" style={{ color: 'var(--muted)', letterSpacing: '0.18em' }}>{d.cred}</div>
+                    {d.bio && <p className="lux-lead mt-16" style={{ maxWidth: 560 }}>{d.bio}</p>}
+                    <Link to="/book" className="link row gap-6 mt-24" style={{ fontSize: 12, letterSpacing: '0.18em', textTransform: 'uppercase' }}>Book with {d.name.split(' ').slice(0, 2).join(' ')} <ArrowRight size={14} /></Link>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      )}
+
+      {/* ---------- Treatments ---------- */}
+      <section className="lux-section" id="treatments" style={{ background: 'var(--surface-2)', borderTop: '1px solid var(--line)', borderBottom: '1px solid var(--line)' }}>
+        <div className="contain treat-grid">
+          <div className="treat-intro">
+            <div className="eyebrow">Treatments</div>
+            <h2 className="lux-title mt-16">What brings you <em>in?</em></h2>
+            <p className="lux-lead mt-16">Choose what’s closest. Your doctor takes it from there — there’s no wrong door.</p>
+            <Link to="/learn?c=procedures" className="link row gap-6 mt-24" style={{ fontSize: 12, letterSpacing: '0.18em', textTransform: 'uppercase' }}>What to expect from procedures <ArrowRight size={14} /></Link>
+          </div>
+          <div className="treatments">
+            {TREATMENTS.map((t, i) => (
+              <button key={t.title} className="treatment" onClick={() => nav(`/book?concern=${t.concern}`)}>
+                <span className="no">{ROMAN[i]}.</span>
+                <span>
+                  <h3>{t.title}</h3>
+                  <p>{t.text}</p>
+                </span>
+                <ArrowUpRight className="go" size={22} />
               </button>
             ))}
           </div>
         </div>
       </section>
 
-      <section className="section" style={{ background: 'var(--surface-2)', borderTop: '1px solid var(--line)', borderBottom: '1px solid var(--line)' }}>
+      {/* ---------- The Porcelain way ---------- */}
+      <section className="lux-section">
         <div className="contain">
-          <div className="section-head"><div><div className="eyebrow">How it works</div><h2 className="mt-8">From booking to follow-up, on your phone</h2></div></div>
-          <div className="grid g-4 steps">
-            {[
-              { icon: CalendarCheck2, t: 'Book a slot', d: 'Pick a time that suits you. No account needed — just your name and number.' },
-              { icon: Stethoscope, t: 'See the doctor', d: 'A proper consultation. Your prescription and any photos are saved to your record.' },
-              { icon: Pill, t: 'Collect medicines', d: 'The pharmacy desk already has your prescription. Just tell them your name.' },
-              { icon: BellRing, t: 'Come back on time', d: 'Your next visit date is in your portal, and we remind you before it’s due.' },
-            ].map((s, i) => (
-              <div key={s.t} className="step">
-                <div className="row between"><span className="n">0{i + 1}</span><s.icon size={22} color="var(--brand)" /></div>
-                <h3 className="mt-8" style={{ fontSize: 17 }}>{s.t}</h3>
-                <p className="small muted mt-4">{s.d}</p>
+          <div className="eyebrow">The {brandWord.charAt(0) + brandWord.slice(1).toLowerCase()} way</div>
+          <h2 className="lux-title mt-16" style={{ maxWidth: 720 }}>From your first visit to your next, <em>nothing is lost.</em></h2>
+          <div className="grid g-4 keep-2 mt-32" style={{ gap: 28 }}>
+            {RITUAL.map((r, i) => (
+              <div key={r.t} className="ritual">
+                <div className="n">{ROMAN[i]}</div>
+                <h3>{r.t}</h3>
+                <p>{r.d}</p>
               </div>
             ))}
           </div>
         </div>
       </section>
 
-      {procedures.length > 0 && (
-        <section className="section">
+      {/* ---------- Journal ---------- */}
+      {journal.length > 0 && (
+        <section className="lux-section" style={{ paddingTop: 0 }}>
           <div className="contain">
-            <div className="section-head">
-              <div><div className="eyebrow">Procedures</div><h2 className="mt-8">Know what to expect</h2></div>
-              <Link to="/learn?c=procedures" className="link row gap-4">All procedures <ArrowRight size={15} /></Link>
-            </div>
-            <div className="grid g-3">{procedures.map((a) => <ArticleCard key={a.slug} a={a} />)}</div>
-          </div>
-        </section>
-      )}
-
-      {myths.length > 0 && (
-        <section className="section" style={{ paddingTop: 0 }}>
-          <div className="contain">
-            <div className="card" style={{ background: 'var(--clay-soft)', border: 0, padding: 32 }}>
-              <div className="section-head" style={{ marginBottom: 16 }}>
-                <div><div className="eyebrow" style={{ color: '#9c4f36' }}>Myth or fact?</div><h2 className="mt-8">Let’s bust a few myths</h2></div>
-                <Link to="/learn?c=myths" className="link row gap-4">See all <ArrowRight size={15} /></Link>
+            <div className="row between wrap" style={{ alignItems: 'flex-end', marginBottom: 12 }}>
+              <div>
+                <div className="eyebrow">Le journal</div>
+                <h2 className="lux-title mt-16">Straight answers, <em>no myths.</em></h2>
               </div>
-              <div className="grid g-3">{myths.map((a) => <ArticleCard key={a.slug} a={a} />)}</div>
+              <Link to="/learn" className="link row gap-6" style={{ fontSize: 12, letterSpacing: '0.18em', textTransform: 'uppercase' }}>Read the journal <ArrowRight size={14} /></Link>
+            </div>
+            <div className="grid g-3" style={{ gap: 40 }}>
+              {journal.map((a) => (
+                <Link key={a.slug} to={`/learn/${a.slug}`} className="journal-card">
+                  <div className="k">{catLabel(a.category)} · {a.read_minutes} min</div>
+                  <h3>{a.title}</h3>
+                  <p>{a.summary}</p>
+                </Link>
+              ))}
             </div>
           </div>
         </section>
       )}
 
-      <section className="section" style={{ paddingTop: 0 }}>
-        <div className="contain grid g-2" style={{ alignItems: 'stretch' }}>
-          <div className="card" style={{ padding: 30 }}>
-            <div className="row gap-6" style={{ color: 'var(--sun)' }}>{[0, 1, 2, 3, 4].map((i) => <Star key={i} size={18} fill="currentColor" />)}</div>
-            <h2 className="serif mt-12" style={{ fontSize: 30 }}>Care that explains itself</h2>
-            <p className="muted mt-12">Every visit ends with a clear plan: what you have, what to use and how, and when to come back. It’s all saved in your portal, so you never lose a prescription slip again.</p>
-            <div className="row wrap mt-24">
-              <Link to="/book" className="btn primary">Book a visit</Link>
-              <Link to="/signup" className="btn">Create your account</Link>
+      {/* ---------- Visit ---------- */}
+      <section className="navy-band">
+        <div className="awning" />
+        <div className="contain lux-section grid g-2" style={{ gap: 64 }}>
+          <div>
+            <div className="eyebrow">Visit</div>
+            <h2 className="lux-title mt-16">Behind the <em>navy door.</em></h2>
+            <p className="lux-lead mt-16" style={{ maxWidth: 440 }}>Book online in under a minute — no account needed. Arrive ten minutes early, and bring any previous prescriptions.</p>
+            <div className="row wrap mt-32" style={{ gap: 12 }}>
+              <Link to="/book" className="btn light lg">Book a consultation</Link>
+              {settings.maps_url && <a className="btn lg" href={settings.maps_url} target="_blank" rel="noreferrer">Directions</a>}
+            </div>
+            <div className="stack gap-8 mt-32" style={{ color: 'rgba(255,255,255,0.8)' }}>
+              {settings.address && <div className="row top gap-6"><MapPin size={16} style={{ marginTop: 4 }} /><span>{settings.address}</span></div>}
+              {settings.phone && <a className="row gap-6" href={`tel:${settings.phone}`}><Phone size={16} />{settings.phone}</a>}
+              {settings.whatsapp && <a className="row gap-6" href={`https://wa.me/${settings.whatsapp.replace(/\D/g, '')}`} target="_blank" rel="noreferrer"><MessageCircle size={16} />WhatsApp</a>}
             </div>
           </div>
-          <div className="card" style={{ padding: 30 }}>
-            <div className="card-title">Opening hours</div>
-            <div className="mt-16"><Hours hours={clinic?.hours || []} /></div>
-            {settings.address && <p className="small muted mt-16">{settings.address}</p>}
+          <div>
+            <div className="eyebrow" style={{ marginBottom: 12 }}>Hours</div>
+            <HoursTable hours={clinic?.hours || []} />
           </div>
         </div>
       </section>
     </>
+  );
+}
+
+function HoursTable({ hours }) {
+  return (
+    <div className="hours-table">
+      {[1, 2, 3, 4, 5, 6, 0].map((d) => {
+        const w = hours.filter((h) => h.weekday === d);
+        return (
+          <div key={d} className="row between">
+            <span className="serif" style={{ fontSize: 21, color: '#fff' }}>{WEEKDAYS[d]}</span>
+            <span style={{ textAlign: 'right', color: w.length ? 'rgba(255,255,255,0.85)' : 'rgba(255,255,255,0.45)', fontWeight: 300 }}>
+              {w.length ? w.map((h) => `${fmtTime(h.start_time)} – ${fmtTime(h.end_time)}`).join(', ') : 'Closed'}
+            </span>
+          </div>
+        );
+      })}
+    </div>
   );
 }
 
@@ -141,7 +227,7 @@ export function ArticleCard({ a, base = '/learn' }) {
     <Link to={`${base}/${a.slug}`} className="article-card">
       <div className="row between">
         <span className="cover" style={{ background: CAT_COLORS[a.category] }} />
-        <span className="tiny muted strong">{catLabel(a.category)} · {a.read_minutes} min</span>
+        <span className="tiny muted" style={{ letterSpacing: '0.18em', textTransform: 'uppercase' }}>{catLabel(a.category)} · {a.read_minutes} min</span>
       </div>
       <h3>{a.title}</h3>
       <p className="small muted">{a.summary}</p>

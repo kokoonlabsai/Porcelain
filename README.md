@@ -1,6 +1,6 @@
-# Derma Clinic
+# Porcelain Skin Clinic
 
-A web app for a dermatology clinic. Patients book online, see their prescriptions and next visit date on their phone, and learn about procedures and care. The doctor writes prescriptions, the pharmacy desk hands medicines over, and the admin sets the schedule.
+The website and clinic app for Porcelain Skin Clinic, a dermatology and aesthetic-medicine clinic. Patients book online, see their prescriptions and next visit date on their phone, and learn about procedures and care. The doctor writes prescriptions, the pharmacy desk hands medicines over, and the admin sets the schedule.
 
 ## What's in it
 
@@ -69,7 +69,8 @@ Demo logins (after `seed:demo`):
 | Role | Phone | Password |
 |---|---|---|
 | Admin | 90000 00001 | admin123 |
-| Doctor | 90000 00002 | doctor123 |
+| Doctor (Dr. Mayank Bajpai) | 90000 00002 | doctor123 |
+| Doctor (Dr. Nitya Bajpai) | 90000 00004 | doctor123 |
 | Reception / pharmacy | 90000 00003 | reception123 |
 | Patient | 98111 11111 | patient123 |
 

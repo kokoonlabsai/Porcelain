@@ -42,10 +42,15 @@ function out(doc) {
 const contains = (s) => new RegExp(String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
 
 const DEFAULT_SETTINGS = {
-  clinic_name: 'Derma Clinic',
-  tagline: 'Skin, hair & wellness — cared for by dermatologists',
-  doctor_name: 'Dr. Your Name',
+  clinic_name: 'Porcelain Skin Clinic',
+  tagline: 'Dermatology and aesthetic medicine, practised with restraint',
+  city: 'Bhopal',
+  doctor_name: 'Dr. Mayank Bajpai',
   doctor_credentials: 'MBBS, MD (Dermatology)',
+  doctor_bio: 'Consultant dermatologist for skin, hair and nail conditions — from acne and pigmentation to hair loss and allergies.',
+  doctor2_name: 'Dr. Nitya Bajpai',
+  doctor2_credentials: 'MBBS, Fellow in Aesthetic Medicine',
+  doctor2_bio: 'Aesthetic medicine with a light hand — peels, lasers, skin boosters and treatments that look like you, rested.',
   phone: '',
   whatsapp: '',
   email: '',

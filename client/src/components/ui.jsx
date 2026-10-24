@@ -5,17 +5,17 @@ import { useApp } from '../lib/store';
 import { fileUrl } from '../lib/api';
 import { STATUS } from '../lib/format';
 
-export function Logo({ size = 34, name }) {
+/** Wordmark in the style of the balcony sign: the first word in spaced capitals, the rest beneath. */
+export function Logo({ name }) {
   const { settings } = useApp();
+  const full = (name || settings.clinic_name || 'Clinic').trim();
+  const [first, ...rest] = full.split(/\s+/);
   return (
-    <Link to="/" className="logo">
-      <span className="brand-mark" style={{ width: size, height: size }}>
-        <svg width={size * 0.62} height={size * 0.62} viewBox="0 0 24 24" fill="none">
-          <path d="M12 3c-3 3.4-5.2 6.2-5.2 9a5.2 5.2 0 0 0 10.4 0C17.2 9.2 15 6.4 12 3Z" fill="#F7F1E8" />
-          <path d="M12 8v11M12 12.5l-2.6-2.1M12 15.2l2.6-2.1" stroke="#2F5D50" strokeWidth="1.5" strokeLinecap="round" />
-        </svg>
+    <Link to="/" className="logo" aria-label={full}>
+      <span className="wordmark">
+        <b>{first.toUpperCase()}</b>
+        {rest.length > 0 && <small>{rest.join(' ')}</small>}
       </span>
-      {name !== false && <span>{name || settings.clinic_name || 'Clinic'}</span>}
     </Link>
   );
 }
@@ -120,23 +120,23 @@ export function Avatar({ name = '', lg }) {
 }
 
 const CONCERN_STYLE = {
-  hair: { icon: Leaf, bg: '#E3EDE8', fg: '#2F5D50' },
-  skin: { icon: Droplets, bg: '#F6E4DC', fg: '#B5644A' },
-  wellness: { icon: Sparkles, bg: '#FBF0DC', fg: '#9A6514' },
-  procedure: { icon: Syringe, bg: '#E5ECF7', fg: '#4A72B8' },
-  other: { icon: HelpCircle, bg: '#EFE7DC', fg: '#6F7A75' },
+  hair: { icon: Leaf, bg: '#E8ECF4', fg: '#1F3264' },
+  skin: { icon: Droplets, bg: '#F4EEE2', fg: '#8A6E3E' },
+  wellness: { icon: Sparkles, bg: '#EEF0F2', fg: '#4B5260' },
+  procedure: { icon: Syringe, bg: '#E8ECF4', fg: '#2B4482' },
+  other: { icon: HelpCircle, bg: '#EFE8DC', fg: '#6E7383' },
 };
 export function ConcernIcon({ concern, size = 22, box = 46 }) {
   const s = CONCERN_STYLE[concern] || CONCERN_STYLE.other;
   const Icon = s.icon;
   return (
-    <span className="ico" style={{ width: box, height: box, borderRadius: box * 0.3, background: s.bg, color: s.fg, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+    <span className="ico" style={{ width: box, height: box, borderRadius: '50%', background: s.bg, color: s.fg, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
       <Icon size={size} />
     </span>
   );
 }
 
-export const CAT_COLORS = { procedures: '#4A72B8', hair: '#2F5D50', skin: '#C9785D', myths: '#9C4F9A', wellness: '#E2A54A' };
+export const CAT_COLORS = { procedures: '#1F3264', hair: '#4B5260', skin: '#A88A55', myths: '#8C5A62', wellness: '#6E8A7A' };
 
 /** Inline bold/italic for the tiny Markdown subset used by articles. */
 function inline(text) {

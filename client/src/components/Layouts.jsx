@@ -9,7 +9,7 @@ import { Logo, Button, Field, Modal, Toasts } from './ui';
 import { WEEKDAYS, fmtTime } from '../lib/format';
 
 export function PublicLayout() {
-  const { user, isStaff, settings, clinic } = useApp();
+  const { user, isStaff, settings } = useApp();
   const [scrolled, setScrolled] = useState(false);
   useEffect(() => {
     const on = () => setScrolled(window.scrollY > 8);
@@ -20,44 +20,50 @@ export function PublicLayout() {
   return (
     <>
       <header className={`topbar ${scrolled ? 'scrolled' : ''}`}>
-        <div className="contain">
-          <Logo />
+        <div className="contain lux-nav">
           <nav className="nav-links">
-            <NavLink to="/" end>Home</NavLink>
-            <NavLink to="/learn">Learn</NavLink>
-            <NavLink to="/book">Book a visit</NavLink>
+            <NavLink to="/" end>Maison</NavLink>
+            <a href="/#treatments">Treatments</a>
+            <NavLink to="/learn">Journal</NavLink>
           </nav>
-          <div className="grow" />
-          {home ? (
-            <Link className="btn primary sm" to={home}>{isStaff ? 'Clinic dashboard' : 'My portal'}</Link>
-          ) : (
-            <>
-              <Link className="btn ghost sm" to="/login">Log in</Link>
-              <Link className="btn primary sm hide-sm" to="/book">Book now</Link>
-            </>
-          )}
+          <Logo />
+          <div className="row gap-6" style={{ justifyContent: 'flex-end' }}>
+            {home ? (
+              <Link className="btn primary sm" to={home}>{isStaff ? 'Dashboard' : 'My portal'}</Link>
+            ) : (
+              <>
+                <Link className="btn ghost sm hide-sm" to="/login">Log in</Link>
+                <Link className="btn primary sm" to="/book">Book</Link>
+              </>
+            )}
+          </div>
         </div>
       </header>
       <main><Outlet /></main>
       <footer className="footer">
-        <div className="contain grid g-3">
-          <div className="stack">
+        <div className="contain grid g-3" style={{ gap: 40 }}>
+          <div className="stack gap-16">
             <Logo />
-            <p>{settings.tagline}</p>
+            <p style={{ maxWidth: 300, fontWeight: 300 }}>{settings.tagline}.</p>
           </div>
           <div className="stack gap-6">
-            <div className="strong" style={{ color: 'var(--ink)' }}>Visit us</div>
+            <div className="strong">Visit</div>
             {settings.address && <div className="row top gap-6"><MapPin size={16} style={{ marginTop: 3 }} /><span>{settings.address}</span></div>}
             {settings.phone && <a className="row gap-6" href={`tel:${settings.phone}`}><Phone size={16} />{settings.phone}</a>}
-            {settings.whatsapp && <a className="row gap-6" href={`https://wa.me/${settings.whatsapp.replace(/\D/g, '')}`} target="_blank" rel="noreferrer"><MessageCircle size={16} />WhatsApp us</a>}
-            {settings.maps_url && <a className="link" href={settings.maps_url} target="_blank" rel="noreferrer">Get directions</a>}
+            {settings.whatsapp && <a className="row gap-6" href={`https://wa.me/${settings.whatsapp.replace(/\D/g, '')}`} target="_blank" rel="noreferrer"><MessageCircle size={16} />WhatsApp</a>}
+            {settings.maps_url && <a className="link" href={settings.maps_url} target="_blank" rel="noreferrer">Directions</a>}
           </div>
           <div className="stack gap-6">
-            <div className="strong" style={{ color: 'var(--ink)' }}>Opening hours</div>
-            <Hours hours={clinic?.hours || []} />
+            <div className="strong">Explore</div>
+            <Link to="/book">Book a consultation</Link>
+            <Link to="/learn">The journal</Link>
+            <Link to="/login">Patient login</Link>
+            <Link to="/signup">Create an account</Link>
           </div>
         </div>
-        <div className="contain mt-24 tiny">© {new Date().getFullYear()} {settings.clinic_name}. Information on this site is educational and doesn’t replace a consultation. · <Link to="/login" className="link">Staff login</Link></div>
+        <div className="contain tiny" style={{ marginTop: 56, paddingTop: 20, borderTop: '1px solid rgba(255,255,255,0.12)', letterSpacing: '0.04em' }}>
+          © {new Date().getFullYear()} {settings.clinic_name}. Information on this site is educational and doesn’t replace a consultation. · <Link to="/login" className="link">Staff login</Link>
+        </div>
       </footer>
       <Toasts />
     </>
@@ -146,7 +152,7 @@ function Shell({ links, tabs }) {
       </aside>
       <div className="main">
         <div className="mobile-top">
-          <Logo size={30} />
+          <Logo />
           <button className="btn ghost sm" onClick={out}><LogOut size={16} />Log out</button>
         </div>
         <Outlet />
