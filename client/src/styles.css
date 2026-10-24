@@ -994,3 +994,31 @@ button.caps-link { background: none; border: 0; padding: 0; cursor: pointer; }
 .appt-fee-pick .btn { height: 30px; }
 .fee-note { display: flex; gap: 12px; align-items: flex-start; padding: 14px 18px; background: var(--surface-2); border: 1px solid var(--line); color: var(--ink-2); font-size: 15px; line-height: 1.55; }
 .fee-note > svg { color: var(--brand); flex-shrink: 0; margin-top: 3px; }
+
+/* Doctor cards: left-aligned, labelled sections, generous spacing */
+.doctors-band .doctor-grid { gap: 32px; align-items: stretch; }
+.doctors-band .doctor-card { text-align: left; padding: 52px 48px 44px; display: flex; flex-direction: column; }
+.doctors-band .doc-head { display: flex; align-items: center; gap: 28px; padding-bottom: 32px; border-bottom: 1px solid rgba(255, 255, 255, 0.14); }
+.doctors-band .doctor-card .arch { width: 104px; height: 134px; margin: 0; flex-shrink: 0; border-radius: 52px 52px 2px 2px; font-size: 46px; }
+.doctors-band .doctor-card .arch::after { inset: 7px; border-radius: 45px 45px 0 0; }
+.doctors-band .doc-exp { margin-bottom: 12px; }
+.doctors-band .doctor-card h3 { font-size: clamp(28px, 2.6vw, 36px); line-height: 1.1; }
+.doctors-band .doc-role { margin-top: 8px; font-size: 17px; color: rgba(255, 255, 255, 0.78); }
+.doc-block { margin-top: 30px; }
+.doc-label { font-size: 12px; font-weight: 600; letter-spacing: 0.2em; text-transform: uppercase; color: #e2cf9f; margin-bottom: 12px; }
+.doc-cred { font-size: 18px; line-height: 1.5; color: #fff; font-weight: 500; }
+.doctors-band .doctor-card p.doc-bio { margin: 30px 0 0; max-width: none; font-size: 18px; line-height: 1.75; color: rgba(255, 255, 255, 0.82); }
+.doctors-band .doc-tags { justify-content: flex-start; margin-top: 0; gap: 10px; }
+.doctors-band .doc-tags span { font-size: 14.5px; padding: 8px 14px; }
+.doctors-band .doc-awards { margin: 0; max-width: none; gap: 14px; }
+.doctors-band .doc-awards li { font-size: 16.5px; line-height: 1.5; gap: 12px; }
+.doctors-band .doc-awards svg { margin-top: 3px; }
+.doctors-band .doctor-card .doc-book { margin-top: auto; padding-top: 40px; justify-content: flex-start; align-self: flex-start; }
+@media (max-width: 620px) {
+  .doctors-band .doctor-card { padding: 36px 24px 32px; }
+  .doctors-band .doc-head { gap: 20px; padding-bottom: 26px; }
+  .doctors-band .doctor-card .arch { width: 80px; height: 104px; font-size: 36px; border-radius: 40px 40px 2px 2px; }
+  .doctors-band .doctor-card .arch::after { border-radius: 34px 34px 0 0; }
+  .doc-block, .doctors-band .doctor-card p.doc-bio { margin-top: 26px; }
+  .doc-cred, .doctors-band .doctor-card p.doc-bio { font-size: 17px; }
+}

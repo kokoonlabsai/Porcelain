@@ -161,23 +161,38 @@ export default function Home() {
                 const initial = d.name.replace(/^dr\.?\s+/i, '').trim()[0] || 'P';
                 return (
                   <div key={d.name} className="doctor-card sr" style={delay(i, 120)}>
-                    <div className="arch">{initial}</div>
-                    {d.exp && <div className="doc-exp">{d.exp}</div>}
-                    <h3>{d.name}</h3>
-                    {d.role && <div className="doc-role">{d.role}</div>}
-                    <div className="cred">{d.cred}</div>
-                    {d.bio && <p>{d.bio}</p>}
+                    <div className="doc-head">
+                      <div className="arch">{initial}</div>
+                      <div>
+                        {d.exp && <div className="doc-exp">{d.exp} experience</div>}
+                        <h3>{d.name}</h3>
+                        {d.role && <div className="doc-role">{d.role}</div>}
+                      </div>
+                    </div>
+                    {d.cred && (
+                      <div className="doc-block">
+                        <div className="doc-label">Qualifications</div>
+                        <div className="doc-cred">{d.cred}</div>
+                      </div>
+                    )}
+                    {d.bio && <p className="doc-bio">{d.bio}</p>}
                     {d.tags && (
-                      <div className="doc-tags">
-                        {d.tags.split(/\s*[·,]\s*/).filter(Boolean).map((t) => <span key={t}>{t}</span>)}
+                      <div className="doc-block">
+                        <div className="doc-label">Focus areas</div>
+                        <div className="doc-tags">
+                          {d.tags.split(/\s*[·,]\s*/).filter(Boolean).map((t) => <span key={t}>{t}</span>)}
+                        </div>
                       </div>
                     )}
                     {d.awards && (
-                      <ul className="doc-awards">
-                        {d.awards.split('\n').map((a) => a.trim()).filter(Boolean).map((a) => <li key={a}><Award size={16} />{a}</li>)}
-                      </ul>
+                      <div className="doc-block">
+                        <div className="doc-label">Recognition</div>
+                        <ul className="doc-awards">
+                          {d.awards.split('\n').map((a) => a.trim()).filter(Boolean).map((a) => <li key={a}><Award size={18} />{a}</li>)}
+                        </ul>
+                      </div>
                     )}
-                    <Link to="/book" className="caps-link mt-24">Book a visit <ArrowRight size={14} /></Link>
+                    <Link to="/book" className="caps-link doc-book">Book with {d.name.replace(/^(dr\.?\s+\S+).*/i, '$1')} <ArrowRight size={14} /></Link>
                   </div>
                 );
               })}
