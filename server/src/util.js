@@ -1,6 +1,6 @@
 const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
-const { db } = require('./db');
+const { db, oid } = require('./db');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-only-secret-change-me';
 if (!process.env.JWT_SECRET && process.env.NODE_ENV === 'production') {
@@ -20,7 +20,7 @@ const wrap = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).cat
 const STAFF_ROLES = ['doctor', 'reception', 'admin'];
 
 function signToken(user) {
-  return jwt.sign({ sub: user.id }, JWT_SECRET, { expiresIn: user.role === 'patient' ? '60d' : '14d' });
+  return jwt.sign({ sub: String(user._id) }, JWT_SECRET, { expiresIn: user.role === 'patient' ? '60d' : '14d' });
 }
 
 async function userFromJwt(token) {
@@ -30,7 +30,8 @@ async function userFromJwt(token) {
   } catch {
     return null;
   }
-  const user = await db.get('SELECT * FROM users WHERE id = ? AND active = 1', payload.sub);
+  const id = oid(payload.sub);
+  const user = id && (await db.users.findOne({ _id: id, active: true }));
   return user && user.password_hash ? user : null;
 }
 
@@ -70,7 +71,7 @@ const requireStaff = () => requireAuth(...STAFF_ROLES);
 
 function publicUser(u) {
   return {
-    id: u.id,
+    id: String(u._id),
     name: u.name,
     phone: u.phone,
     email: u.email,

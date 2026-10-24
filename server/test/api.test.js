@@ -1,30 +1,45 @@
 const { test, before, after } = require('node:test');
 const assert = require('node:assert/strict');
-const os = require('os');
-const path = require('path');
-const fs = require('fs');
 
-const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'clinic-test-'));
-process.env.DB_PATH = path.join(tmp, 'test.db');
+// Tests run against MONGODB_URI when it's set (a throwaway database is created and dropped),
+// otherwise against an in-memory MongoDB that mongodb-memory-server downloads on first use.
 process.env.JWT_SECRET = 'test-secret';
 process.env.NODE_ENV = 'test';
 process.env.ADMIN_PHONE = '9000000001';
 process.env.ADMIN_PASSWORD = 'admin123';
+process.env.MONGODB_DB = `clinic_test_${process.pid}`;
 
-const app = require('../src/index');
 const { normalizePhone } = require('../src/phone');
-const { addDays, today } = require('../src/util');
+// Local date helpers: requiring src/util would connect to MongoDB before the URI is chosen.
+const pad = (n) => String(n).padStart(2, '0');
+const isoOf = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+const today = () => isoOf(new Date());
+const addDays = (iso, n) => { const [y, m, d] = iso.split('-').map(Number); return isoOf(new Date(y, m - 1, d + n)); };
 
 let server;
 let base;
+let mongo;
+let dbModule;
 before(async () => {
+  if (!process.env.MONGODB_URI) {
+    const { MongoMemoryServer } = require('mongodb-memory-server');
+    mongo = await MongoMemoryServer.create();
+    process.env.MONGODB_URI = mongo.getUri();
+  }
+  const app = require('../src/index');
+  dbModule = require('../src/db');
+  await dbModule.ready;
   server = app.listen(0);
   await new Promise((r) => server.once('listening', r));
   base = `http://127.0.0.1:${server.address().port}`;
 });
-after(() => {
-  server.close();
-  fs.rmSync(tmp, { recursive: true, force: true });
+after(async () => {
+  server?.close();
+  if (dbModule) {
+    await dbModule.database.dropDatabase().catch(() => {});
+    await dbModule.client.close();
+  }
+  await mongo?.stop();
 });
 
 async function call(method, url, { token, body } = {}) {
@@ -242,4 +257,20 @@ test('reminder job sends each reminder once', async () => {
   assert.equal(first.appointmentReminders, 0); // the only booking for tomorrow is already completed
   const second = await runReminders();
   assert.equal(second.followUpReminders, 0);
+});
+
+test('two people grabbing the last place at the same moment: exactly one gets it', async () => {
+  const day = addDays(today(), 5);
+  const tries = await Promise.all(['9866666661', '9866666662', '9866666663'].map((phone, i) =>
+    call('POST', '/api/appointments', { body: { name: `Racer ${i}`, phone, concern: 'skin', date: day, start_time: '10:00' } })
+  ));
+  assert.deepEqual(tries.map((t) => t.status).sort(), [201, 409, 409]);
+  const slot = (await call('GET', `/api/slots?date=${day}`)).body.slots.find((s) => s.start === '10:00');
+  assert.equal(slot.remaining, 0);
+});
+
+test('malformed ids are a clean 404, not a crash', async () => {
+  assert.equal((await call('GET', '/api/staff/patients/not-an-id', { token: admin })).status, 404);
+  assert.equal((await call('GET', '/api/staff/visits/123', { token: admin })).status, 404);
+  assert.equal((await call('POST', '/api/appointments/xyz/claim', { body: { phone: '9811111111', password: 'secret1' } })).status, 404);
 });

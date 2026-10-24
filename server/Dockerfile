@@ -1,4 +1,4 @@
-# Clinic API — stateless; data (including photos) lives in Turso (set TURSO_DATABASE_URL + TURSO_AUTH_TOKEN).
+# Clinic API — stateless; data (including photos) lives in MongoDB (set MONGODB_URI, e.g. an Atlas connection string).
 FROM node:22-slim
 WORKDIR /app
 ENV NODE_ENV=production PORT=8080

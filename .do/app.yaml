@@ -1,4 +1,4 @@
-# DigitalOcean App Platform spec: free static frontend + ~$5/month API container on one domain.
+# DigitalOcean App Platform spec: free static frontend + ~$5/month API container on one domain. Data lives in MongoDB Atlas.
 # Set repo below to your GitHub repo, then create the app from this file.
 name: derma-clinic
 region: blr
@@ -33,12 +33,9 @@ services:
       - key: JWT_SECRET
         type: SECRET
         value: change-me-to-a-long-random-string
-      - key: TURSO_DATABASE_URL
+      - key: MONGODB_URI              # Atlas → Connect → Drivers; add the database name after the host
         type: SECRET
-        value: libsql://your-db-name.turso.io
-      - key: TURSO_AUTH_TOKEN
-        type: SECRET
-        value: your-turso-auth-token
+        value: mongodb+srv://user:password@cluster0.xxxxx.mongodb.net/clinic?retryWrites=true&w=majority
       - key: ADMIN_PHONE              # the first admin login is created from these on start-up
         value: "+91 90000 00001"
       - key: ADMIN_PASSWORD

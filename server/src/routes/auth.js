@@ -1,6 +1,6 @@
 const express = require('express');
 const bcrypt = require('bcryptjs');
-const { db } = require('../db');
+const { db, newUser } = require('../db');
 const { normalizePhone } = require('../phone');
 const { HttpError, wrap, signToken, requireAuth, publicUser, str, isEmail } = require('../util');
 
@@ -8,7 +8,7 @@ const router = express.Router();
 
 /** Whether the clinic already holds medical records for this person. */
 async function hasClinicalRecords(userId) {
-  return !!(await db.get('SELECT 1 FROM visits WHERE patient_id = ? LIMIT 1', userId));
+  return !!(await db.visits.findOne({ patient_id: userId }, { projection: { _id: 1 } }));
 }
 
 /**
@@ -32,21 +32,31 @@ router.post(
     if (Object.keys(errors).length) throw new HttpError(422, 'Please check the highlighted fields', errors);
 
     const hash = await bcrypt.hash(password, 10);
-    const existing = await db.get('SELECT * FROM users WHERE phone = ?', phone);
+    const existing = await db.users.findOne({ phone });
     let id;
     if (existing) {
       if (existing.password_hash) {
         throw new HttpError(409, 'This number already has an account. Log in instead.', { phone: 'Already registered' });
       }
-      if (await hasClinicalRecords(existing.id)) {
+      if (await hasClinicalRecords(existing._id)) {
         throw new HttpError(409, 'The clinic already has your records. Ask the reception for your login — they can send a temporary password.', { phone: 'Ask the clinic for your login' });
       }
-      await db.run('UPDATE users SET name = ?, email = COALESCE(?, email), password_hash = ? WHERE id = ?', name, email, hash, existing.id);
-      id = existing.id;
+      // Only claim the record if it's still password-less (guards against a double submit).
+      const { modifiedCount } = await db.users.updateOne(
+        { _id: existing._id, password_hash: null },
+        { $set: { name, password_hash: hash, ...(email ? { email } : {}) } }
+      );
+      if (!modifiedCount) throw new HttpError(409, 'This number already has an account. Log in instead.', { phone: 'Already registered' });
+      id = existing._id;
     } else {
-      id = (await db.run('INSERT INTO users (name, phone, email, password_hash) VALUES (?, ?, ?, ?)', name, phone, email, hash)).lastInsertRowid;
+      try {
+        id = (await db.users.insertOne(newUser({ name, phone, email, password_hash: hash }))).insertedId;
+      } catch (e) {
+        if (e.code === 11000) throw new HttpError(409, 'This number already has an account. Log in instead.', { phone: 'Already registered' });
+        throw e;
+      }
     }
-    const user = await db.get('SELECT * FROM users WHERE id = ?', id);
+    const user = await db.users.findOne({ _id: id });
     res.status(201).json({ token: signToken(user), user: publicUser(user) });
   })
 );
@@ -56,7 +66,7 @@ router.post(
   wrap(async (req, res) => {
     const phone = normalizePhone(req.body?.phone);
     const password = String(req.body?.password || '');
-    const user = phone && (await db.get('SELECT * FROM users WHERE phone = ? AND active = 1', phone));
+    const user = phone && (await db.users.findOne({ phone, active: true }));
     if (!user || !user.password_hash || !(await bcrypt.compare(password, user.password_hash))) {
       throw new HttpError(401, 'Phone number or password is incorrect');
     }
@@ -72,18 +82,17 @@ router.patch(
   wrap(async (req, res) => {
     const u = req.user;
     const b = req.body || {};
+    const set = {};
     if (b.name !== undefined) {
-      const name = str(b.name, 120);
-      if (!name) throw new HttpError(422, 'Name cannot be empty');
-      await db.run('UPDATE users SET name = ? WHERE id = ?', name, u.id);
+      set.name = str(b.name, 120);
+      if (!set.name) throw new HttpError(422, 'Name cannot be empty');
     }
     if (b.email !== undefined) {
-      const email = str(b.email, 200);
-      if (email && !isEmail(email)) throw new HttpError(422, 'That email doesn’t look right');
-      await db.run('UPDATE users SET email = ? WHERE id = ?', email, u.id);
+      set.email = str(b.email, 200);
+      if (set.email && !isEmail(set.email)) throw new HttpError(422, 'That email doesn’t look right');
     }
-    if (b.gender !== undefined) await db.run('UPDATE users SET gender = ? WHERE id = ?', str(b.gender, 20), u.id);
-    if (b.dob !== undefined) await db.run('UPDATE users SET dob = ? WHERE id = ?', str(b.dob, 10), u.id);
+    if (b.gender !== undefined) set.gender = str(b.gender, 20);
+    if (b.dob !== undefined) set.dob = str(b.dob, 10);
     if (b.new_password !== undefined) {
       const next = String(b.new_password || '');
       if (next.length < 6) throw new HttpError(422, 'Use at least 6 characters');
@@ -91,10 +100,11 @@ router.patch(
       if (!u.must_change_password && !(await bcrypt.compare(String(b.current_password || ''), u.password_hash))) {
         throw new HttpError(403, 'Your current password is incorrect');
       }
-      await db.run('UPDATE users SET password_hash = ?, must_change_password = 0 WHERE id = ?', await bcrypt.hash(next, 10), u.id);
+      set.password_hash = await bcrypt.hash(next, 10);
+      set.must_change_password = false;
     }
-    const user = await db.get('SELECT * FROM users WHERE id = ?', u.id);
-    res.json({ user: publicUser(user) });
+    if (Object.keys(set).length) await db.users.updateOne({ _id: u._id }, { $set: set });
+    res.json({ user: publicUser(await db.users.findOne({ _id: u._id })) });
   })
 );
 

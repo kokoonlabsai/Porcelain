@@ -3,7 +3,7 @@ const fs = require('fs');
 const express = require('express');
 const cors = require('cors');
 const { HttpError, wrap, requireAuth } = require('./util');
-const { db, ready } = require('./db');
+const { db, ready, oid } = require('./db');
 const { startJobs } = require('./jobs');
 
 const app = express();
@@ -49,12 +49,12 @@ app.get(
   '/api/files/:id',
   requireAuth(),
   wrap(async (req, res) => {
-    const f = await db.get('SELECT * FROM attachments WHERE id = ?', req.params.id);
-    const allowed = f && (req.user.role !== 'patient' || (f.patient_id === req.user.id && f.visible_to_patient));
+    const f = await db.attachments.findOne({ _id: oid(req.params.id) });
+    const allowed = f && (req.user.role !== 'patient' || (f.patient_id.equals(req.user._id) && f.visible_to_patient));
     if (!allowed) throw new HttpError(404, 'File not found');
     res.set('Content-Type', f.mime);
     res.set('Cache-Control', 'private, max-age=86400');
-    res.send(Buffer.from(f.data, 'base64'));
+    res.send(Buffer.from(f.data.buffer));
   })
 );
 

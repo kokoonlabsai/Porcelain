@@ -53,12 +53,16 @@ A web app for a dermatology clinic. Patients book online, see their prescription
 
 ## Run it locally
 
+You need MongoDB 5.0 or later: a local `mongod`, or a free Atlas cluster. The app connects to `mongodb://127.0.0.1:27017/clinic` unless you set `MONGODB_URI`.
+
 ```bash
 npm install                 # installs server + client
 npm run seed:demo           # optional demo data
 npm run build
 ADMIN_PHONE=9000000001 ADMIN_PASSWORD=admin123 npm start   # http://localhost:4000
 ```
+
+To use Atlas locally too, put `MONGODB_URI=mongodb+srv://…/clinic` in front of each command.
 
 Demo logins (after `seed:demo`):
 
@@ -69,16 +73,35 @@ Demo logins (after `seed:demo`):
 | Reception / pharmacy | 90000 00003 | reception123 |
 | Patient | 98111 11111 | patient123 |
 
-For development, run `npm run dev:server` (API on :4000) and `npm run dev:client` (Vite on :5173). Run the API tests with `npm test`.
+For development, run `npm run dev:server` (API on :4000) and `npm run dev:client` (Vite on :5173). Run the API tests with `npm test`. They use a throwaway database on `MONGODB_URI` if it's set (dropped afterwards); otherwise they start an in-memory MongoDB, which is downloaded the first time.
 
 ## Hosting
 
-This uses a cheap setup: [Turso](https://turso.tech) for the database (free tier) and DigitalOcean App Platform for the API (~$5/month) plus a free static site. `.do/app.yaml` is ready to use. Photos are stored in the database, so the server keeps no files and survives redeploys.
+This uses a cheap setup: [MongoDB Atlas](https://www.mongodb.com/atlas) for the database (the free M0 cluster is plenty to start), and DigitalOcean App Platform for the API (~$5/month) plus a free static site. `.do/app.yaml` is ready to use. Photos are stored in MongoDB, so the server keeps no files and survives redeploys.
+
+**Setting up Atlas**
+1. Create a free cluster, then a database user under **Database Access**.
+2. Under **Network Access**, allow your server's IP address. On DigitalOcean App Platform, which has no fixed IP, allow `0.0.0.0/0`.
+3. Go to **Connect → Drivers** and copy the connection string. Add the database name after the host: `mongodb+srv://user:pass@cluster0.xxxxx.mongodb.net/clinic?retryWrites=true&w=majority`.
+4. Set that as `MONGODB_URI`. Collections, indexes, default opening hours and the starter articles are created on the first start.
+
+**How the data is stored**
+
+| Collection | What's in it |
+|---|---|
+| `users` | Patients and staff. `role` is `patient`, `doctor`, `reception` or `admin` |
+| `appointments` | Bookings, with `patient_id`, `date`, `start_time` and `status` |
+| `visits` | Consultations. The prescription is an `items` array inside each visit, and each medicine has its own `dispensed` flag |
+| `attachments` | Photos and PDFs, stored as binary (up to 6 MB each) |
+| `availability`, `closures` | Weekly opening windows and days off |
+| `articles` | Learn articles |
+| `settings` | One document (`_id: "clinic"`) with the clinic details |
 
 | Env var | |
 |---|---|
 | `JWT_SECRET` | **Required.** A long random string |
-| `TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN` | Hosted database. If they're unset, a local SQLite file is used |
+| `MONGODB_URI` | **Required in production.** Atlas or other MongoDB connection string. Defaults to `mongodb://127.0.0.1:27017/clinic` |
+| `MONGODB_DB` | Optional. Overrides the database name in the URI |
 | `ADMIN_PHONE`, `ADMIN_PASSWORD`, `ADMIN_NAME` | Create the first admin on start-up |
 | `TZ` | The clinic's time zone, e.g. `Asia/Kolkata`. It decides "today" and which slots have passed |
 | `DEFAULT_COUNTRY_CODE` | `91` by default. Added when a 10-digit number is typed without one |

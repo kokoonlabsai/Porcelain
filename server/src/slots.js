@@ -2,7 +2,7 @@ const { db, getSettings } = require('./db');
 const { today, addDays, toMinutes, fromMinutes } = require('./util');
 
 /** Appointments in these states hold their slot. */
-const HOLDING = "('booked','checked_in','completed')";
+const HOLDING = ['booked', 'checked_in', 'completed'];
 
 function weekdayOf(iso) {
   const [y, m, d] = iso.split('-').map(Number);
@@ -13,7 +13,7 @@ function weekdayOf(iso) {
  * Every slot the weekly schedule creates on a date, with how many places are left.
  * Staff see past and short-notice slots too (for walk-ins); patients don't.
  */
-async function slotsFor(date, { forStaff = false, conn = db } = {}) {
+async function slotsFor(date, { forStaff = false } = {}) {
   const settings = await getSettings();
   const now = new Date();
   const todayIso = today();
@@ -21,15 +21,14 @@ async function slotsFor(date, { forStaff = false, conn = db } = {}) {
     if (date < todayIso) return [];
     if (date > addDays(todayIso, Number(settings.booking_days_ahead) || 30)) return [];
   }
-  if (await conn.get('SELECT 1 FROM closures WHERE date = ?', date)) return [];
+  if (await db.closures.findOne({ date })) return [];
 
-  const windows = await conn.all(
-    'SELECT * FROM availability WHERE weekday = ? ORDER BY start_time', weekdayOf(date)
-  );
-  const booked = await conn.all(
-    `SELECT start_time, COUNT(*) AS n FROM appointments WHERE date = ? AND status IN ${HOLDING} GROUP BY start_time`, date
-  );
-  const taken = Object.fromEntries(booked.map((b) => [b.start_time, Number(b.n)]));
+  const windows = await db.availability.find({ weekday: weekdayOf(date) }).sort({ start_time: 1 }).toArray();
+  const booked = await db.appointments.aggregate([
+    { $match: { date, status: { $in: HOLDING } } },
+    { $group: { _id: '$start_time', n: { $sum: 1 } } },
+  ]).toArray();
+  const taken = Object.fromEntries(booked.map((b) => [b._id, b.n]));
   const earliest = now.getHours() * 60 + now.getMinutes() + (Number(settings.min_notice_minutes) || 0);
 
   const seen = new Map();
@@ -53,13 +52,9 @@ async function slotsFor(date, { forStaff = false, conn = db } = {}) {
 async function upcomingDays(count) {
   const settings = await getSettings();
   const days = Math.min(count || Number(settings.booking_days_ahead) || 30, 90);
-  const out = [];
-  for (let i = 0; i <= days; i++) {
-    const date = addDays(today(), i);
-    const slots = await slotsFor(date);
-    out.push({ date, open: slots.length > 0, free: slots.filter((s) => s.available).length });
-  }
-  return out;
+  const dates = Array.from({ length: days + 1 }, (_, i) => addDays(today(), i));
+  const all = await Promise.all(dates.map((date) => slotsFor(date)));
+  return dates.map((date, i) => ({ date, open: all[i].length > 0, free: all[i].filter((s) => s.available).length }));
 }
 
 module.exports = { slotsFor, upcomingDays, weekdayOf, HOLDING };

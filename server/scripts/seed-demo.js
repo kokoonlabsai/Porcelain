@@ -6,45 +6,43 @@
  *   Patient   +91 98111 11111 / patient123
  */
 const bcrypt = require('bcryptjs');
-const { db, ready } = require('../src/db');
+const { db, client, ready, newUser, ObjectId } = require('../src/db');
 const { slotsFor } = require('../src/slots');
 const { today, addDays } = require('../src/util');
 
 async function user(name, phone, role, password, extra = {}) {
-  const existing = await db.get('SELECT id FROM users WHERE phone = ?', phone);
-  if (existing) return existing.id;
-  const hash = password ? await bcrypt.hash(password, 10) : null;
-  return (await db.run(
-    'INSERT INTO users (name, phone, role, password_hash, email, gender, dob) VALUES (?, ?, ?, ?, ?, ?, ?)',
-    name, phone, role, hash, extra.email || null, extra.gender || null, extra.dob || null
-  )).lastInsertRowid;
+  const existing = await db.users.findOne({ phone });
+  if (existing) return existing._id;
+  const doc = newUser({ name, phone, role, password_hash: password ? await bcrypt.hash(password, 10) : null, ...extra });
+  await db.users.insertOne(doc);
+  return doc._id;
 }
 
 async function visit(patientId, doctorId, date, v, items, dispensed) {
-  const id = (await db.run(
-    `INSERT INTO visits (patient_id, doctor_id, date, concern, complaint, diagnosis, procedure_done, advice, follow_up_date)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    patientId, doctorId, date, v.concern, v.complaint, v.diagnosis, v.procedure_done || null, v.advice, v.follow_up_date || null
-  )).lastInsertRowid;
-  for (const [n, i] of items.entries()) {
-    await db.run(
-      `INSERT INTO prescription_items (visit_id, position, medicine, kind, dosage, frequency, duration, instructions, dispensed, dispensed_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      id, n, i[0], i[1], i[2], i[3], i[4], i[5] || null, dispensed ? 1 : 0, dispensed ? `${date} 12:00:00` : null
-    );
-  }
-  return id;
+  const at = new Date(`${date}T12:00:00`);
+  await db.visits.insertOne({
+    patient_id: patientId, appointment_id: null, doctor_id: doctorId, date,
+    concern: v.concern, complaint: v.complaint, diagnosis: v.diagnosis, procedure_done: v.procedure_done || null,
+    advice: v.advice, private_notes: null, follow_up_date: v.follow_up_date || null, follow_up_reminded: false,
+    items: items.map(([medicine, kind, dosage, frequency, duration, instructions]) => ({
+      _id: new ObjectId(), medicine, kind, dosage, frequency, duration, instructions: instructions || null, quantity: null,
+      dispensed, dispensed_at: dispensed ? at : null, dispensed_by: null,
+    })),
+    created_at: at, updated_at: at,
+  });
 }
 
 async function main() {
   await ready;
-  await db.run("INSERT INTO settings (key, value) VALUES ('clinic_name', 'Lumen Skin & Hair Clinic') ON CONFLICT(key) DO UPDATE SET value = excluded.value");
-  await db.batch([
-    ["UPDATE settings SET value = 'Dr. Anjali Mehta' WHERE key = 'doctor_name'"],
-    ["UPDATE settings SET value = '+91 80 4123 4567' WHERE key = 'phone'"],
-    ["UPDATE settings SET value = '+91 98450 00000' WHERE key = 'whatsapp'"],
-    ["UPDATE settings SET value = '2nd floor, 14 Residency Road, Bengaluru 560025' WHERE key = 'address'"],
-  ]);
+  await db.settings.updateOne({ _id: 'clinic' }, {
+    $set: {
+      clinic_name: 'Lumen Skin & Hair Clinic',
+      doctor_name: 'Dr. Anjali Mehta',
+      phone: '+91 80 4123 4567',
+      whatsapp: '+91 98450 00000',
+      address: '2nd floor, 14 Residency Road, Bengaluru 560025',
+    },
+  });
   await user('Clinic Admin', '+919000000001', 'admin', 'admin123');
   const doctor = await user('Dr. Anjali Mehta', '+919000000002', 'doctor', 'doctor123');
   await user('Priya (Reception)', '+919000000003', 'reception', 'reception123');
@@ -54,7 +52,7 @@ async function main() {
   const meera = await user('Meera Iyer', '+919833333333', 'patient', null, { gender: 'Female', dob: '2001-11-02' });
   const arjun = await user('Arjun Shah', '+919844444444', 'patient', null, { gender: 'Male' });
 
-  if (!(await db.get('SELECT 1 FROM visits LIMIT 1'))) {
+  if (!(await db.visits.findOne({}))) {
     await visit(asha, doctor, addDays(today(), -42), {
       concern: 'hair', complaint: 'Hair fall for 3 months after viral fever', diagnosis: 'Telogen effluvium',
       advice: 'Eat protein with every meal.\nUse a mild shampoo; wash as often as you like.\nHair fall should settle in 8–12 weeks.', follow_up_date: addDays(today(), -12),
@@ -79,23 +77,23 @@ async function main() {
     ], false);
   }
 
-  if (!(await db.get('SELECT 1 FROM appointments WHERE date = ?', today()))) {
+  if (!(await db.appointments.findOne({ date: today() }))) {
     const free = (await slotsFor(today(), { forStaff: true })).filter((s) => s.available);
     const plan = [
       [meera, 'skin', 'completed', 'Pimples for 6 months'],
       [arjun, 'procedure', 'checked_in', 'Interested in laser hair reduction'],
       [ravi, 'hair', 'booked', 'Receding hairline'],
     ];
-    for (const [i, [pid, concern, status, desc]] of plan.entries()) {
+    for (const [i, [patient_id, concern, status, description]] of plan.entries()) {
       const s = free[i * 2];
       if (!s) break;
-      await db.run(
-        'INSERT INTO appointments (patient_id, date, start_time, end_time, concern, description, status, source) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-        pid, today(), s.start, s.end, concern, desc, status, i === 1 ? 'walk_in' : 'online'
-      );
+      await db.appointments.insertOne({
+        patient_id, date: today(), start_time: s.start, end_time: s.end, concern, description, status,
+        source: i === 1 ? 'walk_in' : 'online', reminder_sent: false, created_at: new Date(),
+      });
     }
   }
   console.log('Demo data ready. Admin +91 90000 00001 / admin123 · Doctor 90000 00002 / doctor123 · Reception 90000 00003 / reception123 · Patient 98111 11111 / patient123');
 }
 
-main().then(() => process.exit(0), (e) => { console.error(e); process.exit(1); });
+main().then(() => client.close(), (e) => { console.error(e); return client.close().then(() => process.exit(1)); });

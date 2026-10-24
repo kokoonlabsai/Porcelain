@@ -1,9 +1,9 @@
 const express = require('express');
 const bcrypt = require('bcryptjs');
-const { db, getSettings, DEFAULT_SETTINGS } = require('../db');
+const { db, getSettings, DEFAULT_SETTINGS, oid, out, newUser } = require('../db');
 const { normalizePhone } = require('../phone');
 const {
-  HttpError, wrap, requireAuth, isISODate, isTime, toMinutes, str, isEmail, tempPassword, publicUser,
+  HttpError, wrap, requireAuth, isISODate, isTime, toMinutes, str, isEmail, tempPassword, publicUser, addDays, today,
 } = require('../util');
 
 const router = express.Router();
@@ -11,12 +11,9 @@ router.use(requireAuth('admin'));
 
 // ---------- Weekly schedule ----------
 
-router.get(
-  '/availability',
-  wrap(async (req, res) => {
-    res.json({ windows: await db.all('SELECT * FROM availability ORDER BY weekday, start_time') });
-  })
-);
+const allWindows = async () => out(await db.availability.find().sort({ weekday: 1, start_time: 1 }).toArray());
+
+router.get('/availability', wrap(async (req, res) => res.json({ windows: await allWindows() })));
 
 /** Replaces the whole weekly schedule. Each window: weekday 0–6 (Sunday = 0), start, end, slot length. */
 router.put(
@@ -44,25 +41,17 @@ router.put(
         }
       }
     }
-    await db.batch([
-      ['DELETE FROM availability'],
-      ...clean.map((w) => [
-        'INSERT INTO availability (weekday, start_time, end_time, slot_minutes, capacity) VALUES (?, ?, ?, ?, ?)',
-        w.weekday, w.start_time, w.end_time, w.slot_minutes, w.capacity,
-      ]),
-    ]);
-    res.json({ windows: await db.all('SELECT * FROM availability ORDER BY weekday, start_time') });
+    await db.availability.deleteMany({});
+    if (clean.length) await db.availability.insertMany(clean);
+    res.json({ windows: await allWindows() });
   })
 );
 
 // ---------- Days off ----------
 
-router.get(
-  '/closures',
-  wrap(async (req, res) => {
-    res.json({ closures: await db.all("SELECT * FROM closures WHERE date >= date('now', '-1 day') ORDER BY date") });
-  })
-);
+const upcomingClosures = async () => out(await db.closures.find({ date: { $gte: addDays(today(), -1) } }).sort({ date: 1 }).toArray());
+
+router.get('/closures', wrap(async (req, res) => res.json({ closures: await upcomingClosures() })));
 
 /** Close one day or a range (from → to). Existing bookings on those days are listed so reception can call them. */
 router.post(
@@ -72,23 +61,23 @@ router.post(
     const to = req.body?.to || from;
     if (!isISODate(from) || !isISODate(to) || to < from) throw new HttpError(422, 'Pick the dates to close');
     const reason = str(req.body?.reason, 200);
-    const { addDays } = require('../util');
     const dates = [];
     for (let d = from; d <= to && dates.length < 120; d = addDays(d, 1)) dates.push(d);
-    await db.batch(dates.map((d) => ['INSERT INTO closures (date, reason) VALUES (?, ?) ON CONFLICT(date) DO UPDATE SET reason = excluded.reason', d, reason]));
-    const affected = await db.all(
-      `SELECT a.id, a.date, a.start_time, u.name, u.phone FROM appointments a JOIN users u ON u.id = a.patient_id
-       WHERE a.date BETWEEN ? AND ? AND a.status = 'booked' ORDER BY a.date, a.start_time`,
-      from, to
-    );
-    res.status(201).json({ closures: await db.all("SELECT * FROM closures WHERE date >= date('now', '-1 day') ORDER BY date"), affected });
+    await db.closures.bulkWrite(dates.map((date) => ({ updateOne: { filter: { date }, update: { $set: { date, reason } }, upsert: true } })));
+    const affected = await db.appointments.aggregate([
+      { $match: { date: { $gte: from, $lte: to }, status: 'booked' } },
+      { $sort: { date: 1, start_time: 1 } },
+      { $lookup: { from: 'users', localField: 'patient_id', foreignField: '_id', as: 'u', pipeline: [{ $project: { name: 1, phone: 1 } }] } },
+      { $project: { date: 1, start_time: 1, name: { $first: '$u.name' }, phone: { $first: '$u.phone' } } },
+    ]).toArray();
+    res.status(201).json({ closures: await upcomingClosures(), affected: out(affected) });
   })
 );
 
 router.delete(
   '/closures/:id',
   wrap(async (req, res) => {
-    await db.run('DELETE FROM closures WHERE id = ?', req.params.id);
+    await db.closures.deleteOne({ _id: oid(req.params.id) });
     res.json({ ok: true });
   })
 );
@@ -101,29 +90,30 @@ router.put(
   '/settings',
   wrap(async (req, res) => {
     const b = req.body || {};
-    const updates = Object.keys(DEFAULT_SETTINGS)
-      .filter((k) => b[k] !== undefined)
-      .map((k) => [k, String(b[k] ?? '').trim().slice(0, 500)]);
-    for (const [k, v] of updates) {
+    const updates = Object.fromEntries(
+      Object.keys(DEFAULT_SETTINGS).filter((k) => b[k] !== undefined).map((k) => [k, String(b[k] ?? '').trim().slice(0, 500)])
+    );
+    for (const [k, v] of Object.entries(updates)) {
       if (['booking_days_ahead', 'min_notice_minutes'].includes(k) && !/^\d{1,4}$/.test(v)) throw new HttpError(422, 'Use a whole number');
       if (k === 'clinic_name' && !v) throw new HttpError(422, 'The clinic needs a name');
     }
-    await db.batch(updates.map(([k, v]) => ['INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value', k, v]));
+    if (Object.keys(updates).length) await db.settings.updateOne({ _id: 'clinic' }, { $set: updates }, { upsert: true });
     res.json({ settings: await getSettings() });
   })
 );
 
 // ---------- Staff accounts ----------
 
+const STAFF = ['doctor', 'reception', 'admin'];
+const staffOut = (u) => ({ ...publicUser(u), active: !!u.active });
+
 router.get(
   '/staff',
   wrap(async (req, res) => {
-    const rows = await db.all("SELECT * FROM users WHERE role != 'patient' ORDER BY active DESC, role, name");
-    res.json({ staff: rows.map((u) => ({ ...publicUser(u), active: !!u.active })) });
+    const rows = await db.users.find({ role: { $ne: 'patient' } }).sort({ active: -1, role: 1, name: 1 }).toArray();
+    res.json({ staff: rows.map(staffOut) });
   })
 );
-
-const STAFF = ['doctor', 'reception', 'admin'];
 
 router.post(
   '/staff',
@@ -138,53 +128,57 @@ router.post(
     if (email && !isEmail(email)) errors.email = 'That email doesn’t look right';
     if (!STAFF.includes(role)) errors.role = 'Pick a role';
     if (Object.keys(errors).length) throw new HttpError(422, 'Please check the highlighted fields', errors);
-    const existing = await db.get('SELECT * FROM users WHERE phone = ?', phone);
+    const existing = await db.users.findOne({ phone });
     if (existing && existing.role !== 'patient') throw new HttpError(409, 'This number is already a staff account', { phone: 'Already staff' });
-    if (existing && (await db.get('SELECT 1 FROM visits WHERE patient_id = ? LIMIT 1', existing.id))) {
+    if (existing && (await db.visits.findOne({ patient_id: existing._id }, { projection: { _id: 1 } }))) {
       throw new HttpError(409, 'This number belongs to a patient with medical records. Use a different number for the staff login.', { phone: 'Patient number' });
     }
     const password = tempPassword();
-    const hash = await bcrypt.hash(password, 10);
+    const fields = { name, email, role, password_hash: await bcrypt.hash(password, 10), must_change_password: true, active: true };
     let id;
     if (existing) {
-      await db.run('UPDATE users SET name = ?, email = ?, role = ?, password_hash = ?, must_change_password = 1, active = 1 WHERE id = ?', name, email, role, hash, existing.id);
-      id = existing.id;
+      await db.users.updateOne({ _id: existing._id }, { $set: fields });
+      id = existing._id;
     } else {
-      id = (await db.run('INSERT INTO users (name, phone, email, role, password_hash, must_change_password) VALUES (?, ?, ?, ?, ?, 1)', name, phone, email, role, hash)).lastInsertRowid;
+      id = (await db.users.insertOne(newUser({ ...fields, phone }))).insertedId;
     }
-    const u = await db.get('SELECT * FROM users WHERE id = ?', id);
-    res.status(201).json({ user: { ...publicUser(u), active: true }, password });
+    res.status(201).json({ user: staffOut(await db.users.findOne({ _id: id })), password });
   })
 );
+
+async function loadStaff(id) {
+  const u = await db.users.findOne({ _id: oid(id), role: { $ne: 'patient' } });
+  if (!u) throw new HttpError(404, 'Staff member not found');
+  return u;
+}
 
 router.patch(
   '/staff/:id',
   wrap(async (req, res) => {
-    const u = await db.get("SELECT * FROM users WHERE id = ? AND role != 'patient'", req.params.id);
-    if (!u) throw new HttpError(404, 'Staff member not found');
+    const u = await loadStaff(req.params.id);
     const { role, active, name, email } = req.body || {};
-    if (u.id === req.user.id && ((role && role !== 'admin') || active === false)) {
+    if (u._id.equals(req.user._id) && ((role && role !== 'admin') || active === false)) {
       throw new HttpError(409, 'You can’t remove your own admin access');
     }
+    const set = {};
     if (role !== undefined) {
       if (!STAFF.includes(role)) throw new HttpError(422, 'Pick a role');
-      await db.run('UPDATE users SET role = ? WHERE id = ?', role, u.id);
+      set.role = role;
     }
-    if (active !== undefined) await db.run('UPDATE users SET active = ? WHERE id = ?', active ? 1 : 0, u.id);
-    if (name !== undefined && str(name)) await db.run('UPDATE users SET name = ? WHERE id = ?', str(name, 120), u.id);
-    if (email !== undefined) await db.run('UPDATE users SET email = ? WHERE id = ?', str(email, 200), u.id);
-    const fresh = await db.get('SELECT * FROM users WHERE id = ?', u.id);
-    res.json({ user: { ...publicUser(fresh), active: !!fresh.active } });
+    if (active !== undefined) set.active = !!active;
+    if (name !== undefined && str(name)) set.name = str(name, 120);
+    if (email !== undefined) set.email = str(email, 200);
+    if (Object.keys(set).length) await db.users.updateOne({ _id: u._id }, { $set: set });
+    res.json({ user: staffOut(await db.users.findOne({ _id: u._id })) });
   })
 );
 
 router.post(
   '/staff/:id/reset',
   wrap(async (req, res) => {
-    const u = await db.get("SELECT * FROM users WHERE id = ? AND role != 'patient'", req.params.id);
-    if (!u) throw new HttpError(404, 'Staff member not found');
+    const u = await loadStaff(req.params.id);
     const password = tempPassword();
-    await db.run('UPDATE users SET password_hash = ?, must_change_password = 1 WHERE id = ?', await bcrypt.hash(password, 10), u.id);
+    await db.users.updateOne({ _id: u._id }, { $set: { password_hash: await bcrypt.hash(password, 10), must_change_password: true } });
     res.json({ password });
   })
 );
@@ -204,58 +198,51 @@ function articleFields(b) {
     summary: str(b.summary, 400) || '',
     body: str(b.body, 50000) || '',
     read_minutes: Math.max(1, Math.min(60, Number(b.read_minutes) || Math.ceil((String(b.body || '').split(/\s+/).length || 1) / 200))),
-    published: b.published === false ? 0 : 1,
+    published: b.published !== false,
   };
+}
+
+async function loadArticle(id) {
+  const a = await db.articles.findOne({ _id: oid(id) });
+  if (!a) throw new HttpError(404, 'Article not found');
+  return a;
 }
 
 router.get(
   '/articles',
   wrap(async (req, res) => {
-    res.json({ articles: await db.all('SELECT id, slug, title, category, summary, read_minutes, published, updated_at FROM articles ORDER BY category, id') });
+    res.json({ articles: out(await db.articles.find({}, { projection: { body: 0 } }).sort({ category: 1, _id: 1 }).toArray()) });
   })
 );
 
-router.get(
-  '/articles/:id',
-  wrap(async (req, res) => {
-    const a = await db.get('SELECT * FROM articles WHERE id = ?', req.params.id);
-    if (!a) throw new HttpError(404, 'Article not found');
-    res.json({ article: a });
-  })
-);
+router.get('/articles/:id', wrap(async (req, res) => res.json({ article: out(await loadArticle(req.params.id)) })));
 
 router.post(
   '/articles',
   wrap(async (req, res) => {
     const f = articleFields(req.body || {});
     let slug = slugify(f.title) || 'article';
-    if (await db.get('SELECT 1 FROM articles WHERE slug = ?', slug)) slug = `${slug}-${Date.now().toString(36)}`;
-    const { lastInsertRowid } = await db.run(
-      'INSERT INTO articles (slug, title, category, summary, body, read_minutes, published) VALUES (?, ?, ?, ?, ?, ?, ?)',
-      slug, f.title, f.category, f.summary, f.body, f.read_minutes, f.published
-    );
-    res.status(201).json({ article: await db.get('SELECT * FROM articles WHERE id = ?', lastInsertRowid) });
+    if (await db.articles.findOne({ slug })) slug = `${slug}-${Date.now().toString(36)}`;
+    const now = new Date();
+    const doc = { slug, ...f, created_at: now, updated_at: now };
+    await db.articles.insertOne(doc);
+    res.status(201).json({ article: out(doc) });
   })
 );
 
 router.put(
   '/articles/:id',
   wrap(async (req, res) => {
-    const a = await db.get('SELECT id FROM articles WHERE id = ?', req.params.id);
-    if (!a) throw new HttpError(404, 'Article not found');
-    const f = articleFields(req.body || {});
-    await db.run(
-      "UPDATE articles SET title = ?, category = ?, summary = ?, body = ?, read_minutes = ?, published = ?, updated_at = datetime('now') WHERE id = ?",
-      f.title, f.category, f.summary, f.body, f.read_minutes, f.published, a.id
-    );
-    res.json({ article: await db.get('SELECT * FROM articles WHERE id = ?', a.id) });
+    const a = await loadArticle(req.params.id);
+    await db.articles.updateOne({ _id: a._id }, { $set: { ...articleFields(req.body || {}), updated_at: new Date() } });
+    res.json({ article: out(await db.articles.findOne({ _id: a._id })) });
   })
 );
 
 router.delete(
   '/articles/:id',
   wrap(async (req, res) => {
-    await db.run('DELETE FROM articles WHERE id = ?', req.params.id);
+    await db.articles.deleteOne({ _id: oid(req.params.id) });
     res.json({ ok: true });
   })
 );

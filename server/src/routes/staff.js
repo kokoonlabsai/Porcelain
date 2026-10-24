@@ -1,9 +1,12 @@
 const express = require('express');
 const bcrypt = require('bcryptjs');
-const { db } = require('../db');
+const { Binary } = require('mongodb');
+const { db, oid, out, contains, newUser, ObjectId } = require('../db');
 const { normalizePhone } = require('../phone');
 const { createAppointment, CONCERNS } = require('../appointments');
-const { visitDetails } = require('../records');
+const { slotsFor } = require('../slots');
+const { latestVisits } = require('../jobs');
+const { visitDetails, ATTACHMENT_FIELDS } = require('../records');
 const mail = require('../mail');
 const {
   HttpError, wrap, requireStaff, requireAuth, today, addDays, isISODate, isTime, str, isEmail, tempPassword, publicUser,
@@ -14,6 +17,10 @@ const router = express.Router();
 router.use(requireStaff());
 const clinician = requireAuth('doctor', 'admin');
 const canSeePrivate = (u) => u.role === 'doctor' || u.role === 'admin';
+const STATUSES = ['booked', 'checked_in', 'completed', 'cancelled', 'no_show'];
+
+/** Visits whose prescription still has something to hand over. */
+const PENDING = { items: { $elemMatch: { dispensed: false } } };
 
 // ---------- Dashboard ----------
 
@@ -21,36 +28,33 @@ router.get(
   '/dashboard',
   wrap(async (req, res) => {
     const t = today();
-    const counts = await db.get(
-      `SELECT
-         SUM(CASE WHEN status IN ('booked','checked_in','completed') THEN 1 ELSE 0 END) AS total,
-         SUM(CASE WHEN status = 'booked' THEN 1 ELSE 0 END) AS waiting,
-         SUM(CASE WHEN status = 'checked_in' THEN 1 ELSE 0 END) AS checked_in,
-         SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) AS completed
-       FROM appointments WHERE date = ?`, t
+    const counts = Object.fromEntries(
+      (await db.appointments.aggregate([{ $match: { date: t } }, { $group: { _id: '$status', n: { $sum: 1 } } }]).toArray()).map((c) => [c._id, c.n])
     );
-    const pharmacy = await db.get(
-      `SELECT COUNT(DISTINCT v.id) AS n FROM prescription_items p JOIN visits v ON v.id = p.visit_id
-       WHERE p.dispensed = 0 AND v.date >= ?`, addDays(t, -30)
-    );
-    // Patients whose follow-up is due within a week (or overdue) and who haven't booked.
-    const followUps = await db.all(
-      `SELECT v.id AS visit_id, v.follow_up_date, v.diagnosis, u.id AS patient_id, u.name, u.phone
-       FROM visits v JOIN users u ON u.id = v.patient_id
-       WHERE v.follow_up_date IS NOT NULL AND v.follow_up_date BETWEEN ? AND ?
-         AND v.id = (SELECT MAX(id) FROM visits WHERE patient_id = v.patient_id)
-         AND NOT EXISTS (SELECT 1 FROM appointments a WHERE a.patient_id = v.patient_id AND a.date >= v.date AND a.id != COALESCE(v.appointment_id, 0) AND a.status IN ('booked','checked_in','completed'))
-       ORDER BY v.follow_up_date LIMIT 50`,
-      addDays(t, -30), addDays(t, 7)
-    );
-    const newPatients = await db.get(
-      "SELECT COUNT(*) AS n FROM users WHERE role = 'patient' AND created_at >= datetime('now', '-30 days')"
-    );
+    const pharmacy = await db.visits.countDocuments({ date: { $gte: addDays(t, -30) }, ...PENDING });
+
+    // Patients whose follow-up is due within a week (or overdue) and who haven't booked since.
+    const due = await latestVisits({ follow_up_date: { $gte: addDays(t, -30), $lte: addDays(t, 7) } });
+    const followUps = [];
+    for (const v of due.sort((a, b) => a.follow_up_date.localeCompare(b.follow_up_date)).slice(0, 50)) {
+      const booked = await db.appointments.findOne({
+        patient_id: v.patient_id, date: { $gte: v.date }, _id: { $ne: v.appointment_id || null }, status: { $in: ['booked', 'checked_in', 'completed'] },
+      });
+      if (booked) continue;
+      const u = await db.users.findOne({ _id: v.patient_id }, { projection: { name: 1, phone: 1 } });
+      if (u) followUps.push({ visit_id: String(v._id), follow_up_date: v.follow_up_date, diagnosis: v.diagnosis, patient_id: String(u._id), name: u.name, phone: u.phone });
+    }
+    const since = new Date(Date.now() - 30 * 86_400_000);
     res.json({
-      today: { total: counts.total || 0, waiting: counts.waiting || 0, checked_in: counts.checked_in || 0, completed: counts.completed || 0 },
-      pharmacy_pending: pharmacy.n,
+      today: {
+        total: (counts.booked || 0) + (counts.checked_in || 0) + (counts.completed || 0),
+        waiting: counts.booked || 0,
+        checked_in: counts.checked_in || 0,
+        completed: counts.completed || 0,
+      },
+      pharmacy_pending: pharmacy,
       follow_ups: followUps,
-      new_patients_30d: newPatients.n,
+      new_patients_30d: await db.users.countDocuments({ role: 'patient', created_at: { $gte: since } }),
     });
   })
 );
@@ -62,15 +66,23 @@ router.get(
   wrap(async (req, res) => {
     const from = isISODate(req.query.from) ? req.query.from : isISODate(req.query.date) ? req.query.date : today();
     const to = isISODate(req.query.to) ? req.query.to : from;
-    const rows = await db.all(
-      `SELECT a.*, u.name, u.phone, u.email, u.password_hash IS NOT NULL AS has_account,
-         (SELECT id FROM visits WHERE appointment_id = a.id LIMIT 1) AS visit_id,
-         (SELECT COUNT(*) FROM visits WHERE patient_id = a.patient_id) AS visit_count
-       FROM appointments a JOIN users u ON u.id = a.patient_id
-       WHERE a.date BETWEEN ? AND ? ORDER BY a.date, a.start_time`,
-      from, to
-    );
-    res.json({ appointments: rows.map((r) => ({ ...r, has_account: !!r.has_account })) });
+    const rows = await db.appointments.aggregate([
+      { $match: { date: { $gte: from, $lte: to } } },
+      { $sort: { date: 1, start_time: 1 } },
+      { $lookup: { from: 'users', localField: 'patient_id', foreignField: '_id', as: 'u' } },
+      { $unwind: '$u' },
+      { $lookup: { from: 'visits', localField: 'patient_id', foreignField: 'patient_id', as: 'v', pipeline: [{ $project: { appointment_id: 1 } }] } },
+      {
+        $addFields: {
+          name: '$u.name', phone: '$u.phone', email: '$u.email',
+          has_account: { $ne: [{ $ifNull: ['$u.password_hash', null] }, null] },
+          visit_count: { $size: '$v' },
+          visit_id: { $first: { $map: { input: { $filter: { input: '$v', cond: { $eq: ['$$this.appointment_id', '$_id'] } } }, in: '$$this._id' } } },
+        },
+      },
+      { $project: { u: 0, v: 0 } },
+    ]).toArray();
+    res.json({ appointments: out(rows) });
   })
 );
 
@@ -82,30 +94,31 @@ router.post(
     if (patient.email && appointment.status === 'booked' && appointment.date > today()) {
       mail.bookingConfirmation(patient, appointment).catch(() => {});
     }
-    res.status(201).json({ appointment, patient: publicUser(patient) });
+    res.status(201).json({ appointment: out(appointment), patient: publicUser(patient) });
   })
 );
 
 router.patch(
   '/appointments/:id',
   wrap(async (req, res) => {
-    const a = await db.get('SELECT * FROM appointments WHERE id = ?', req.params.id);
+    const a = await db.appointments.findOne({ _id: oid(req.params.id) });
     if (!a) throw new HttpError(404, 'Appointment not found');
     const { status, date, start_time } = req.body || {};
+    const set = {};
     if (status !== undefined) {
-      if (!['booked', 'checked_in', 'completed', 'cancelled', 'no_show'].includes(status)) throw new HttpError(422, 'Unknown status');
-      await db.run('UPDATE appointments SET status = ? WHERE id = ?', status, a.id);
+      if (!STATUSES.includes(status)) throw new HttpError(422, 'Unknown status');
+      set.status = status;
     }
     if (date !== undefined || start_time !== undefined) {
       if (!isISODate(date) || !isTime(start_time)) throw new HttpError(422, 'Pick a date and time');
-      const { slotsFor } = require('../slots');
       const slot = (await slotsFor(date, { forStaff: true })).find((s) => s.start === start_time);
       if (!slot) throw new HttpError(409, 'That time isn’t in the schedule');
       const sameSlot = a.date === date && a.start_time === start_time;
       if (!sameSlot && !slot.available) throw new HttpError(409, 'That slot is full');
-      await db.run('UPDATE appointments SET date = ?, start_time = ?, end_time = ?, reminder_sent = 0 WHERE id = ?', date, start_time, slot.end, a.id);
+      Object.assign(set, { date, start_time, end_time: slot.end, reminder_sent: false });
     }
-    res.json({ appointment: await db.get('SELECT * FROM appointments WHERE id = ?', a.id) });
+    if (Object.keys(set).length) await db.appointments.updateOne({ _id: a._id }, { $set: set });
+    res.json({ appointment: out(await db.appointments.findOne({ _id: a._id })) });
   })
 );
 
@@ -115,60 +128,66 @@ router.get(
   '/patients',
   wrap(async (req, res) => {
     const q = str(req.query.q, 100);
-    const digits = q ? q.replace(/\D/g, '') : '';
-    const where = ["u.role = 'patient'"];
-    const args = [];
+    const match = { role: 'patient' };
     if (q) {
-      const parts = ['u.name LIKE ?'];
-      args.push(`%${q}%`);
-      if (digits.length >= 3) {
-        parts.push('u.phone LIKE ?');
-        args.push(`%${digits}%`);
-      }
-      where.push(`(${parts.join(' OR ')})`);
+      const digits = q.replace(/\D/g, '');
+      match.$or = [{ name: contains(q) }, ...(digits.length >= 3 ? [{ phone: contains(digits) }] : [])];
     }
-    const rows = await db.all(
-      `SELECT u.id, u.name, u.phone, u.email, u.gender, u.dob, u.created_at, u.password_hash IS NOT NULL AS has_account,
-         (SELECT MAX(date) FROM visits WHERE patient_id = u.id) AS last_visit,
-         (SELECT COUNT(*) FROM visits WHERE patient_id = u.id) AS visit_count,
-         (SELECT COUNT(*) FROM prescription_items p JOIN visits v ON v.id = p.visit_id WHERE v.patient_id = u.id AND p.dispensed = 0) AS pending_items
-       FROM users u WHERE ${where.join(' AND ')}
-       ORDER BY COALESCE((SELECT MAX(date) FROM visits WHERE patient_id = u.id), u.created_at) DESC LIMIT 50`,
-      ...args
-    );
-    res.json({ patients: rows.map((r) => ({ ...r, has_account: !!r.has_account })) });
+    const rows = await db.users.aggregate([
+      { $match: match },
+      {
+        $lookup: {
+          from: 'visits', localField: '_id', foreignField: 'patient_id', as: 'v',
+          pipeline: [{ $project: { date: 1, pending: { $size: { $filter: { input: { $ifNull: ['$items', []] }, cond: { $eq: ['$$this.dispensed', false] } } } } } }],
+        },
+      },
+      {
+        $project: {
+          name: 1, phone: 1, email: 1, gender: 1, dob: 1, created_at: 1,
+          has_account: { $ne: [{ $ifNull: ['$password_hash', null] }, null] },
+          last_visit: { $max: '$v.date' },
+          visit_count: { $size: '$v' },
+          pending_items: { $sum: '$v.pending' },
+        },
+      },
+      { $addFields: { recent: { $ifNull: ['$last_visit', { $dateToString: { date: '$created_at', format: '%Y-%m-%d' } }] } } },
+      { $sort: { recent: -1, _id: -1 } },
+      { $limit: 50 },
+      { $project: { recent: 0 } },
+    ]).toArray();
+    res.json({ patients: out(rows) });
   })
 );
 
 function patientFields(body) {
   const errors = {};
-  const out = {};
+  const f = {};
   if (body.name !== undefined) {
-    out.name = str(body.name, 120);
-    if (!out.name) errors.name = 'Name is required';
+    f.name = str(body.name, 120);
+    if (!f.name) errors.name = 'Name is required';
   }
   if (body.phone !== undefined) {
-    out.phone = normalizePhone(body.phone);
-    if (!out.phone) errors.phone = 'Enter a valid phone number';
+    f.phone = normalizePhone(body.phone);
+    if (!f.phone) errors.phone = 'Enter a valid phone number';
   }
   if (body.email !== undefined) {
-    out.email = str(body.email, 200);
-    if (out.email && !isEmail(out.email)) errors.email = 'That email doesn’t look right';
+    f.email = str(body.email, 200);
+    if (f.email && !isEmail(f.email)) errors.email = 'That email doesn’t look right';
   }
-  if (body.gender !== undefined) out.gender = str(body.gender, 20);
+  if (body.gender !== undefined) f.gender = str(body.gender, 20);
   if (body.dob !== undefined) {
-    out.dob = str(body.dob, 10);
-    if (out.dob && !isISODate(out.dob)) errors.dob = 'Use a valid date';
+    f.dob = str(body.dob, 10);
+    if (f.dob && !isISODate(f.dob)) errors.dob = 'Use a valid date';
   }
-  if (body.notes !== undefined) out.notes = str(body.notes, 4000);
+  if (body.notes !== undefined) f.notes = str(body.notes, 4000);
   if (Object.keys(errors).length) throw new HttpError(422, 'Please check the highlighted fields', errors);
-  return out;
+  return f;
 }
 
 /** Gives the patient a login with a temporary password (or resets it). The password is shown once. */
 async function issueTempPassword(patient, { sendEmail = true } = {}) {
   const password = tempPassword();
-  await db.run('UPDATE users SET password_hash = ?, must_change_password = 1 WHERE id = ?', await bcrypt.hash(password, 10), patient.id);
+  await db.users.updateOne({ _id: patient._id }, { $set: { password_hash: await bcrypt.hash(password, 10), must_change_password: true } });
   let emailed = false;
   if (sendEmail && patient.email) emailed = (await mail.welcome(patient, password)).sent;
   return { password, emailed };
@@ -178,21 +197,20 @@ router.post(
   '/patients',
   wrap(async (req, res) => {
     const f = patientFields({ name: '', phone: '', ...req.body });
-    if (await db.get('SELECT 1 FROM users WHERE phone = ?', f.phone)) {
-      throw new HttpError(409, 'A patient with this number already exists', { phone: 'Already registered' });
+    const patient = newUser(f);
+    try {
+      await db.users.insertOne(patient);
+    } catch (e) {
+      if (e.code === 11000) throw new HttpError(409, 'A patient with this number already exists', { phone: 'Already registered' });
+      throw e;
     }
-    const { lastInsertRowid } = await db.run(
-      'INSERT INTO users (name, phone, email, gender, dob, notes) VALUES (?, ?, ?, ?, ?, ?)',
-      f.name, f.phone, f.email, f.gender, f.dob, f.notes
-    );
-    const patient = await db.get('SELECT * FROM users WHERE id = ?', lastInsertRowid);
     const account = req.body?.create_account ? await issueTempPassword(patient) : null;
-    res.status(201).json({ patient: publicUser(patient), account });
+    res.status(201).json({ patient: publicUser(await db.users.findOne({ _id: patient._id })), account });
   })
 );
 
 async function loadPatient(id) {
-  const p = await db.get("SELECT * FROM users WHERE id = ? AND role = 'patient'", id);
+  const p = await db.users.findOne({ _id: oid(String(id ?? '')), role: 'patient' });
   if (!p) throw new HttpError(404, 'Patient not found');
   return p;
 }
@@ -201,18 +219,17 @@ router.get(
   '/patients/:id',
   wrap(async (req, res) => {
     const p = await loadPatient(req.params.id);
-    const appointments = await db.all('SELECT * FROM appointments WHERE patient_id = ? ORDER BY date DESC, start_time DESC', p.id);
-    const visits = await db.all('SELECT * FROM visits WHERE patient_id = ? ORDER BY date DESC, id DESC', p.id);
     const showPrivate = canSeePrivate(req.user);
-    const photos = await db.all(
-      'SELECT id, visit_id, mime, size, caption, visible_to_patient, created_at FROM attachments WHERE patient_id = ? ORDER BY created_at DESC',
-      p.id
-    );
+    const [appointments, visits, photos] = await Promise.all([
+      db.appointments.find({ patient_id: p._id }).sort({ date: -1, start_time: -1 }).toArray(),
+      db.visits.find({ patient_id: p._id }).sort({ date: -1, _id: -1 }).toArray(),
+      db.attachments.find({ patient_id: p._id }, { projection: ATTACHMENT_FIELDS }).sort({ created_at: -1 }).toArray(),
+    ]);
     res.json({
       patient: { ...publicUser(p), notes: showPrivate ? p.notes : undefined },
-      appointments,
+      appointments: out(appointments),
       visits: await Promise.all(visits.map((v) => visitDetails(v, { showPrivate }))),
-      photos,
+      photos: out(photos),
     });
   })
 );
@@ -222,13 +239,16 @@ router.patch(
   wrap(async (req, res) => {
     const p = await loadPatient(req.params.id);
     const f = patientFields(req.body || {});
-    if (f.phone && f.phone !== p.phone && (await db.get('SELECT 1 FROM users WHERE phone = ?', f.phone))) {
-      throw new HttpError(409, 'Another person already uses this number', { phone: 'Already registered' });
-    }
     if (f.notes !== undefined && !canSeePrivate(req.user)) delete f.notes;
-    const keys = Object.keys(f);
-    if (keys.length) await db.run(`UPDATE users SET ${keys.map((k) => `${k} = ?`).join(', ')} WHERE id = ?`, ...keys.map((k) => f[k]), p.id);
-    res.json({ patient: publicUser(await db.get('SELECT * FROM users WHERE id = ?', p.id)) });
+    if (Object.keys(f).length) {
+      try {
+        await db.users.updateOne({ _id: p._id }, { $set: f });
+      } catch (e) {
+        if (e.code === 11000) throw new HttpError(409, 'Another person already uses this number', { phone: 'Already registered' });
+        throw e;
+      }
+    }
+    res.json({ patient: publicUser(await db.users.findOne({ _id: p._id })) });
   })
 );
 
@@ -237,28 +257,25 @@ router.post(
   wrap(async (req, res) => {
     const p = await loadPatient(req.params.id);
     const account = await issueTempPassword(p, { sendEmail: req.body?.send_email !== false });
-    res.json({ account, patient: publicUser(await db.get('SELECT * FROM users WHERE id = ?', p.id)) });
+    res.json({ account, patient: publicUser(await db.users.findOne({ _id: p._id })) });
   })
 );
 
 // ---------- Visits & prescriptions ----------
 
+const ITEM_FIELDS = ['medicine', 'kind', 'dosage', 'frequency', 'duration', 'instructions', 'quantity'];
+const ITEM_LIMITS = { medicine: 200, kind: 40, dosage: 100, frequency: 100, duration: 100, instructions: 500, quantity: 50 };
+
 function cleanItems(items) {
   if (!Array.isArray(items)) return [];
   return items
-    .map((i, position) => ({
-      position,
-      medicine: str(i?.medicine, 200),
-      kind: str(i?.kind, 40),
-      dosage: str(i?.dosage, 100),
-      frequency: str(i?.frequency, 100),
-      duration: str(i?.duration, 100),
-      instructions: str(i?.instructions, 500),
-      quantity: str(i?.quantity, 50),
-      id: Number(i?.id) || null,
-    }))
+    .map((i) => ({ id: oid(i?.id), ...Object.fromEntries(ITEM_FIELDS.map((k) => [k, str(i?.[k], ITEM_LIMITS[k])])) }))
     .filter((i) => i.medicine);
 }
+
+const newItem = (i) => ({
+  _id: new ObjectId(), ...Object.fromEntries(ITEM_FIELDS.map((k) => [k, i[k]])), dispensed: false, dispensed_at: null, dispensed_by: null,
+});
 
 function visitFields(body) {
   const follow = str(body.follow_up_date, 10);
@@ -277,9 +294,10 @@ function visitFields(body) {
   };
 }
 
-async function respondWithVisit(res, id, status = 200) {
-  const v = await db.get('SELECT * FROM visits WHERE id = ?', id);
-  res.status(status).json({ visit: await visitDetails(v, { showPrivate: true }) });
+async function loadVisit(id) {
+  const v = await db.visits.findOne({ _id: oid(String(id ?? '')) });
+  if (!v) throw new HttpError(404, 'Visit not found');
+  return v;
 }
 
 router.post(
@@ -289,90 +307,57 @@ router.post(
     const b = req.body || {};
     const patient = await loadPatient(b.patient_id);
     const f = visitFields(b);
-    const items = cleanItems(b.items);
     let appointmentId = null;
     if (b.appointment_id) {
-      const a = await db.get('SELECT * FROM appointments WHERE id = ? AND patient_id = ?', b.appointment_id, patient.id);
+      const a = await db.appointments.findOne({ _id: oid(String(b.appointment_id)), patient_id: patient._id });
       if (!a) throw new HttpError(404, 'Appointment not found');
-      appointmentId = a.id;
+      appointmentId = a._id;
       f.concern = f.concern || a.concern;
       f.complaint = f.complaint || a.description;
     }
-    const id = await db.tx(async (conn) => {
-      const { lastInsertRowid } = await conn.run(
-        `INSERT INTO visits (patient_id, appointment_id, doctor_id, date, concern, complaint, diagnosis, procedure_done, advice, private_notes, follow_up_date)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        patient.id, appointmentId, req.user.id, f.date, f.concern, f.complaint, f.diagnosis, f.procedure_done, f.advice, f.private_notes, f.follow_up_date
-      );
-      for (const i of items) {
-        await conn.run(
-          `INSERT INTO prescription_items (visit_id, position, medicine, kind, dosage, frequency, duration, instructions, quantity)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          lastInsertRowid, i.position, i.medicine, i.kind, i.dosage, i.frequency, i.duration, i.instructions, i.quantity
-        );
-      }
-      if (appointmentId) await conn.run("UPDATE appointments SET status = 'completed' WHERE id = ?", appointmentId);
-      return lastInsertRowid;
-    });
-    if (b.send_email && patient.email) {
-      const v = await db.get('SELECT * FROM visits WHERE id = ?', id);
-      await mail.visitSummary(patient, v, await db.all('SELECT * FROM prescription_items WHERE visit_id = ? ORDER BY position', id));
-    }
-    await respondWithVisit(res, id, 201);
+    const now = new Date();
+    const visit = {
+      patient_id: patient._id, appointment_id: appointmentId, doctor_id: req.user._id, ...f,
+      items: cleanItems(b.items).map(newItem), follow_up_reminded: false, created_at: now, updated_at: now,
+    };
+    await db.visits.insertOne(visit);
+    if (appointmentId) await db.appointments.updateOne({ _id: appointmentId }, { $set: { status: 'completed' } });
+    if (b.send_email && patient.email) await mail.visitSummary(patient, visit, visit.items);
+    res.status(201).json({ visit: await visitDetails(visit, { showPrivate: true }) });
   })
 );
 
 router.get(
   '/visits/:id',
   wrap(async (req, res) => {
-    const v = await db.get('SELECT * FROM visits WHERE id = ?', req.params.id);
-    if (!v) throw new HttpError(404, 'Visit not found');
-    const patient = await db.get('SELECT * FROM users WHERE id = ?', v.patient_id);
+    const v = await loadVisit(req.params.id);
+    const patient = await db.users.findOne({ _id: v.patient_id });
     res.json({ visit: await visitDetails(v, { showPrivate: canSeePrivate(req.user) }), patient: publicUser(patient) });
   })
 );
 
-/** Edit a visit. Medicines already handed over stay as they are; the rest are replaced. */
+/** Edit a visit. Medicines already handed over are always kept; the rest follow the list sent. */
 router.put(
   '/visits/:id',
   clinician,
   wrap(async (req, res) => {
-    const v = await db.get('SELECT * FROM visits WHERE id = ?', req.params.id);
-    if (!v) throw new HttpError(404, 'Visit not found');
+    const v = await loadVisit(req.params.id);
     const f = visitFields({ ...v, ...req.body });
-    const items = cleanItems(req.body?.items);
-    await db.tx(async (conn) => {
-      await conn.run(
-        `UPDATE visits SET date = ?, concern = ?, complaint = ?, diagnosis = ?, procedure_done = ?, advice = ?, private_notes = ?,
-           follow_up_date = ?, follow_up_reminded = CASE WHEN follow_up_date IS ? THEN follow_up_reminded ELSE 0 END, updated_at = datetime('now')
-         WHERE id = ?`,
-        f.date, f.concern, f.complaint, f.diagnosis, f.procedure_done, f.advice, f.private_notes, f.follow_up_date, f.follow_up_date, v.id
-      );
-      if (req.body?.items !== undefined) {
-        const keep = items.filter((i) => i.id).map((i) => i.id);
-        const existing = await conn.all('SELECT id, dispensed FROM prescription_items WHERE visit_id = ?', v.id);
-        for (const e of existing) {
-          if (!keep.includes(e.id) && !e.dispensed) await conn.run('DELETE FROM prescription_items WHERE id = ?', e.id);
-        }
-        for (const i of items) {
-          const own = i.id && existing.find((e) => e.id === i.id);
-          if (own) {
-            await conn.run(
-              `UPDATE prescription_items SET position = ?, medicine = ?, kind = ?, dosage = ?, frequency = ?, duration = ?, instructions = ?, quantity = ?
-               WHERE id = ?`,
-              i.position, i.medicine, i.kind, i.dosage, i.frequency, i.duration, i.instructions, i.quantity, i.id
-            );
-          } else {
-            await conn.run(
-              `INSERT INTO prescription_items (visit_id, position, medicine, kind, dosage, frequency, duration, instructions, quantity)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-              v.id, i.position, i.medicine, i.kind, i.dosage, i.frequency, i.duration, i.instructions, i.quantity
-            );
-          }
-        }
-      }
-    });
-    await respondWithVisit(res, v.id);
+    const set = { ...f, updated_at: new Date() };
+    if (f.follow_up_date !== v.follow_up_date) set.follow_up_reminded = false;
+    if (req.body?.items !== undefined) {
+      const sent = cleanItems(req.body.items);
+      const existing = v.items || [];
+      const items = sent.map((i) => {
+        const own = i.id && existing.find((e) => e._id.equals(i.id));
+        return own ? { ...own, ...Object.fromEntries(ITEM_FIELDS.map((k) => [k, i[k]])) } : newItem(i);
+      });
+      // Handed-over medicines that weren't in the list stay on the record.
+      for (const e of existing) if (e.dispensed && !items.some((i) => i._id.equals(e._id))) items.push(e);
+      set.items = items;
+    }
+    await db.visits.updateOne({ _id: v._id }, { $set: set });
+    res.json({ visit: await visitDetails(await db.visits.findOne({ _id: v._id }), { showPrivate: true }) });
   })
 );
 
@@ -380,8 +365,8 @@ router.delete(
   '/visits/:id',
   clinician,
   wrap(async (req, res) => {
-    const { changes } = await db.run('DELETE FROM visits WHERE id = ?', req.params.id);
-    if (!changes) throw new HttpError(404, 'Visit not found');
+    const v = await loadVisit(req.params.id);
+    await Promise.all([db.visits.deleteOne({ _id: v._id }), db.attachments.deleteMany({ visit_id: v._id })]);
     res.json({ ok: true });
   })
 );
@@ -389,11 +374,10 @@ router.delete(
 router.post(
   '/visits/:id/email',
   wrap(async (req, res) => {
-    const v = await db.get('SELECT * FROM visits WHERE id = ?', req.params.id);
-    if (!v) throw new HttpError(404, 'Visit not found');
-    const patient = await db.get('SELECT * FROM users WHERE id = ?', v.patient_id);
+    const v = await loadVisit(req.params.id);
+    const patient = await db.users.findOne({ _id: v.patient_id });
     if (!patient.email) throw new HttpError(422, 'Add the patient’s email first');
-    const result = await mail.visitSummary(patient, v, await db.all('SELECT * FROM prescription_items WHERE visit_id = ? ORDER BY position', v.id));
+    const result = await mail.visitSummary(patient, v, v.items || []);
     if (!result.sent) throw new HttpError(503, result.reason === 'smtp not configured' ? 'Email isn’t set up on the server yet (SMTP settings)' : 'The email could not be sent');
     res.json({ ok: true });
   })
@@ -404,12 +388,19 @@ router.get(
   '/medicines',
   wrap(async (req, res) => {
     const q = str(req.query.q, 100) || '';
-    const rows = await db.all(
-      `SELECT medicine, kind, dosage, frequency, duration, instructions, COUNT(*) AS uses FROM prescription_items
-       WHERE medicine LIKE ? GROUP BY lower(medicine) ORDER BY uses DESC LIMIT 12`,
-      `%${q}%`
-    );
-    res.json({ medicines: rows });
+    const rows = await db.visits.aggregate([
+      { $match: { 'items.medicine': contains(q) } },
+      { $sort: { _id: -1 } },
+      { $limit: 500 },
+      { $unwind: '$items' },
+      { $match: { 'items.medicine': contains(q) } },
+      { $group: { _id: { $toLower: '$items.medicine' }, item: { $first: '$items' }, uses: { $sum: 1 } } },
+      { $sort: { uses: -1 } },
+      { $limit: 12 },
+    ]).toArray();
+    res.json({
+      medicines: rows.map(({ item, uses }) => ({ ...Object.fromEntries(ITEM_FIELDS.filter((k) => k !== 'quantity').map((k) => [k, item[k]])), uses })),
+    });
   })
 );
 
@@ -417,6 +408,10 @@ router.get(
 
 const MAX_BYTES = 6 * 1024 * 1024;
 const ALLOWED = ['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'application/pdf'];
+const attachmentOut = (a) => {
+  const { data: _data, ...rest } = a;
+  return out(rest);
+};
 
 router.post(
   '/attachments',
@@ -426,22 +421,22 @@ router.post(
     const patient = await loadPatient(b.patient_id);
     const m = /^data:([\w/+.-]+);base64,([A-Za-z0-9+/=]+)$/.exec(String(b.data || ''));
     if (!m) throw new HttpError(422, 'Upload a photo or PDF');
-    const [, mime, data] = m;
+    const [, mime, base64] = m;
     if (!ALLOWED.includes(mime)) throw new HttpError(422, 'Use a JPG, PNG, WebP or PDF file');
-    const size = Math.floor((data.length * 3) / 4);
-    if (size > MAX_BYTES) throw new HttpError(413, 'That file is larger than 6 MB');
+    const data = Buffer.from(base64, 'base64');
+    if (data.length > MAX_BYTES) throw new HttpError(413, 'That file is larger than 6 MB');
     let visitId = null;
     if (b.visit_id) {
-      const v = await db.get('SELECT id FROM visits WHERE id = ? AND patient_id = ?', b.visit_id, patient.id);
+      const v = await db.visits.findOne({ _id: oid(String(b.visit_id)), patient_id: patient._id }, { projection: { _id: 1 } });
       if (!v) throw new HttpError(404, 'Visit not found');
-      visitId = v.id;
+      visitId = v._id;
     }
-    const { lastInsertRowid } = await db.run(
-      'INSERT INTO attachments (patient_id, visit_id, mime, data, size, caption, visible_to_patient, uploaded_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-      patient.id, visitId, mime, data, size, str(b.caption, 200), b.visible_to_patient === false ? 0 : 1, req.user.id
-    );
-    const row = await db.get('SELECT id, visit_id, mime, size, caption, visible_to_patient, created_at FROM attachments WHERE id = ?', lastInsertRowid);
-    res.status(201).json({ attachment: row });
+    const doc = {
+      patient_id: patient._id, visit_id: visitId, mime, data: new Binary(data), size: data.length,
+      caption: str(b.caption, 200), visible_to_patient: b.visible_to_patient !== false, uploaded_by: req.user._id, created_at: new Date(),
+    };
+    await db.attachments.insertOne(doc);
+    res.status(201).json({ attachment: attachmentOut(doc) });
   })
 );
 
@@ -449,11 +444,15 @@ router.patch(
   '/attachments/:id',
   clinician,
   wrap(async (req, res) => {
-    const a = await db.get('SELECT id FROM attachments WHERE id = ?', req.params.id);
+    const _id = oid(req.params.id);
+    const set = {};
+    if (req.body?.caption !== undefined) set.caption = str(req.body.caption, 200);
+    if (req.body?.visible_to_patient !== undefined) set.visible_to_patient = !!req.body.visible_to_patient;
+    const a = Object.keys(set).length
+      ? await db.attachments.findOneAndUpdate({ _id }, { $set: set }, { returnDocument: 'after', projection: ATTACHMENT_FIELDS })
+      : await db.attachments.findOne({ _id }, { projection: ATTACHMENT_FIELDS });
     if (!a) throw new HttpError(404, 'File not found');
-    if (req.body?.caption !== undefined) await db.run('UPDATE attachments SET caption = ? WHERE id = ?', str(req.body.caption, 200), a.id);
-    if (req.body?.visible_to_patient !== undefined) await db.run('UPDATE attachments SET visible_to_patient = ? WHERE id = ?', req.body.visible_to_patient ? 1 : 0, a.id);
-    res.json({ attachment: await db.get('SELECT id, visit_id, mime, size, caption, visible_to_patient, created_at FROM attachments WHERE id = ?', a.id) });
+    res.json({ attachment: out(a) });
   })
 );
 
@@ -461,41 +460,36 @@ router.delete(
   '/attachments/:id',
   clinician,
   wrap(async (req, res) => {
-    const { changes } = await db.run('DELETE FROM attachments WHERE id = ?', req.params.id);
-    if (!changes) throw new HttpError(404, 'File not found');
+    const { deletedCount } = await db.attachments.deleteOne({ _id: oid(req.params.id) });
+    if (!deletedCount) throw new HttpError(404, 'File not found');
     res.json({ ok: true });
   })
 );
 
 // ---------- Pharmacy ----------
 
-async function pharmacyRows(where, args) {
-  const visits = await db.all(
-    `SELECT v.*, u.name, u.phone FROM visits v JOIN users u ON u.id = v.patient_id
-     WHERE ${where} AND EXISTS (SELECT 1 FROM prescription_items WHERE visit_id = v.id)
-     ORDER BY v.date DESC, v.id DESC LIMIT 60`,
-    ...args
-  );
-  return Promise.all(
-    visits.map(async (v) => {
-      const d = await visitDetails(v);
-      return {
-        visit_id: v.id, date: v.date, patient_id: v.patient_id, name: v.name, phone: v.phone, doctor_name: d.doctor_name,
-        diagnosis: v.diagnosis, items: d.items, follow_up_date: v.follow_up_date,
-      };
-    })
-  );
+async function pharmacyRows(match) {
+  const rows = await db.visits.aggregate([
+    { $match: { ...match, 'items.0': { $exists: true } } },
+    { $sort: { date: -1, _id: -1 } },
+    { $limit: 60 },
+    { $lookup: { from: 'users', localField: 'patient_id', foreignField: '_id', as: 'u', pipeline: [{ $project: { name: 1, phone: 1 } }] } },
+    { $lookup: { from: 'users', localField: 'doctor_id', foreignField: '_id', as: 'd', pipeline: [{ $project: { name: 1 } }] } },
+    {
+      $project: {
+        _id: 0, visit_id: '$_id', date: 1, patient_id: 1, diagnosis: 1, items: 1, follow_up_date: 1,
+        name: { $first: '$u.name' }, phone: { $first: '$u.phone' }, doctor_name: { $first: '$d.name' },
+      },
+    },
+  ]).toArray();
+  return out(rows);
 }
 
 /** Prescriptions still waiting to be handed over, newest first. */
 router.get(
   '/pharmacy/queue',
   wrap(async (req, res) => {
-    const rows = await pharmacyRows(
-      'v.date >= ? AND EXISTS (SELECT 1 FROM prescription_items WHERE visit_id = v.id AND dispensed = 0)',
-      [addDays(today(), -30)]
-    );
-    res.json({ prescriptions: rows });
+    res.json({ prescriptions: await pharmacyRows({ date: { $gte: addDays(today(), -30) }, ...PENDING }) });
   })
 );
 
@@ -505,36 +499,40 @@ router.get(
     const q = str(req.query.q, 100);
     if (!q) return res.json({ prescriptions: [] });
     const digits = q.replace(/\D/g, '');
-    const rows = await pharmacyRows(
-      digits.length >= 3 ? '(u.name LIKE ? OR u.phone LIKE ?)' : 'u.name LIKE ?',
-      digits.length >= 3 ? [`%${q}%`, `%${digits}%`] : [`%${q}%`]
-    );
-    res.json({ prescriptions: rows });
+    const patients = await db.users
+      .find({ role: 'patient', $or: [{ name: contains(q) }, ...(digits.length >= 3 ? [{ phone: contains(digits) }] : [])] }, { projection: { _id: 1 } })
+      .limit(50)
+      .toArray();
+    res.json({ prescriptions: await pharmacyRows({ patient_id: { $in: patients.map((p) => p._id) } }) });
   })
 );
 
 router.post(
   '/prescription-items/:id/dispense',
   wrap(async (req, res) => {
-    const item = await db.get('SELECT * FROM prescription_items WHERE id = ?', req.params.id);
-    if (!item) throw new HttpError(404, 'Medicine not found');
+    const itemId = oid(req.params.id);
+    if (!itemId) throw new HttpError(404, 'Medicine not found');
     const done = req.body?.dispensed !== false;
-    await db.run(
-      "UPDATE prescription_items SET dispensed = ?, dispensed_at = CASE WHEN ? THEN datetime('now') ELSE NULL END, dispensed_by = ? WHERE id = ?",
-      done ? 1 : 0, done ? 1 : 0, done ? req.user.id : null, item.id
+    const v = await db.visits.findOneAndUpdate(
+      { 'items._id': itemId },
+      { $set: { 'items.$.dispensed': done, 'items.$.dispensed_at': done ? new Date() : null, 'items.$.dispensed_by': done ? req.user._id : null } },
+      { returnDocument: 'after' }
     );
-    res.json({ item: await db.get('SELECT * FROM prescription_items WHERE id = ?', item.id) });
+    if (!v) throw new HttpError(404, 'Medicine not found');
+    res.json({ item: out(v.items.find((i) => i._id.equals(itemId))) });
   })
 );
 
 router.post(
   '/visits/:id/dispense-all',
   wrap(async (req, res) => {
-    await db.run(
-      "UPDATE prescription_items SET dispensed = 1, dispensed_at = datetime('now'), dispensed_by = ? WHERE visit_id = ? AND dispensed = 0",
-      req.user.id, req.params.id
+    const v = await db.visits.findOneAndUpdate(
+      { _id: oid(req.params.id) },
+      { $set: { 'items.$[i].dispensed': true, 'items.$[i].dispensed_at': new Date(), 'items.$[i].dispensed_by': req.user._id } },
+      { arrayFilters: [{ 'i.dispensed': false }], returnDocument: 'after' }
     );
-    res.json({ items: await db.all('SELECT * FROM prescription_items WHERE visit_id = ? ORDER BY position', req.params.id) });
+    if (!v) throw new HttpError(404, 'Visit not found');
+    res.json({ items: out(v.items) });
   })
 );
 
