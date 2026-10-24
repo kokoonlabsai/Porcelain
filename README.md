@@ -83,6 +83,8 @@ The website and clinic app for Porcelain Skin Clinic, a dermatology and aestheti
 
 ## Run it locally
 
+Copy `server/.env.example` to `server/.env` and fill it in. The server reads it on start-up. Variables already set in your shell or on your host take priority.
+
 You need MongoDB 5.0 or later: a local `mongod`, or a free Atlas cluster. The app connects to `mongodb://127.0.0.1:27017/clinic` unless you set `MONGODB_URI`.
 
 ```bash

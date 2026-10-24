@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Layers, ShoppingBag, Package, Plus, Trash2, Copy, Save, CalendarOff, KeyRound, UserPlus, Pencil, Eye, Newspaper, CalendarClock, UserCog, Settings, LogOut } from 'lucide-react';
+import { AlertTriangle, Layers, ShoppingBag, Package, Plus, Trash2, Copy, Save, CalendarOff, KeyRound, UserPlus, Pencil, Eye, Newspaper, CalendarClock, UserCog, Settings, LogOut } from 'lucide-react';
 import { api } from '../lib/api';
 import { useApp, useLoad } from '../lib/store';
 import { WEEKDAYS, fmtDate, fmtTime, displayPhone, ARTICLE_CATS, catLabel, todayISO } from '../lib/format';
@@ -404,6 +404,7 @@ const SETTINGS_FIELDS = [
 export function ClinicSettings() {
   const { toast, setClinic, clinic } = useApp();
   const { data, error, loading, reload } = useLoad(() => api('/admin/settings'), []);
+  const config = useLoad(() => api('/shop/config'), []);
   const [f, setF] = useState(null);
   const [busy, setBusy] = useState(false);
   useEffect(() => { if (data) setF(data.settings); }, [data]);
@@ -422,6 +423,12 @@ export function ClinicSettings() {
   return (
     <div className="page narrow fade-in">
       <div className="page-head"><div><div className="eyebrow">Admin</div><h1 className="mt-4">Clinic details</h1></div></div>
+      {config.data && !config.data.online_payment && Number(f.deposit_amount) > 0 && (
+        <div className="notice sun mb-16" style={{ marginBottom: 16 }}>
+          <AlertTriangle size={18} />
+          <div><b>Booking deposits and online shop payments are off</b> — Razorpay isn’t set up on the server yet. Add <code>RAZORPAY_KEY_ID</code> and <code>RAZORPAY_KEY_SECRET</code> (see <code>server/.env.example</code>) and restart the server.</div>
+        </div>
+      )}
       <form className="card stack gap-16" onSubmit={save}>
         {SETTINGS_FIELDS.map(([k, label, hint]) => (
           <Field key={k} label={label} hint={hint}>

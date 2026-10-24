@@ -5,6 +5,7 @@
  *   Reception +91 90000 00003 / reception123
  *   Patient   +91 98111 11111 / patient123
  */
+require('../src/env');
 const bcrypt = require('bcryptjs');
 const { db, client, ready, newUser, ObjectId } = require('../src/db');
 const { slotsFor } = require('../src/slots');
