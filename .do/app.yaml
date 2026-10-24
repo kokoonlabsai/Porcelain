@@ -6,7 +6,7 @@ region: blr
 static_sites:
   - name: web
     github:
-      repo: kokoonlabsai/derma-clinic
+      repo: kokoonlabsai/porcelain
       branch: main
       deploy_on_push: true
     source_dir: client
@@ -17,7 +17,7 @@ static_sites:
 services:
   - name: api
     github:
-      repo: kokoonlabsai/derma-clinic
+      repo: kokoonlabsai/porcelain
       branch: main
       deploy_on_push: true
     source_dir: server
