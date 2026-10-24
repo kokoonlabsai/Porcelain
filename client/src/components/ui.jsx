@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Link } from 'react-router-dom';
 import { CheckCircle2, AlertCircle, Loader2, X, Sparkles, Leaf, Droplets, Syringe, HelpCircle, FileText, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useApp } from '../lib/store';
@@ -46,7 +47,8 @@ export function Modal({ title, onClose, children, wide }) {
     document.body.style.overflow = 'hidden';
     return () => { window.removeEventListener('keydown', onKey); document.body.style.overflow = ''; };
   }, [onClose]);
-  return (
+  // Rendered on <body>, so an animated (transformed) page can't trap the full-screen backdrop.
+  return createPortal(
     <div className="modal-back" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
       <div className={`modal ${wide ? 'wide' : ''}`} role="dialog" aria-modal="true">
         <div className="modal-head">
@@ -55,7 +57,8 @@ export function Modal({ title, onClose, children, wide }) {
         </div>
         <div className="modal-body">{children}</div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 
@@ -219,7 +222,7 @@ export function PhotoGrid({ photos, renderTag, onDelete }) {
           </div>
         ))}
       </div>
-      {current && (
+      {current && createPortal(
         <div className="lightbox" onClick={() => setOpen(null)}>
           <div className="row" style={{ position: 'absolute', top: 16, right: 16 }}>
             {onDelete && <button className="btn sm" onClick={(e) => { e.stopPropagation(); onDelete(current); setOpen(null); }}>Delete</button>}
@@ -231,7 +234,8 @@ export function PhotoGrid({ photos, renderTag, onDelete }) {
             {photos.length > 1 && <button className="btn icon ghost" style={{ color: '#fff' }} onClick={() => setOpen((open + 1) % photos.length)}><ChevronRight /></button>}
           </div>
           {current.caption && <div className="strong">{current.caption}</div>}
-        </div>
+        </div>,
+        document.body
       )}
     </>
   );
