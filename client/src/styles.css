@@ -1022,3 +1022,22 @@ button.caps-link { background: none; border: 0; padding: 0; cursor: pointer; }
   .doc-block, .doctors-band .doctor-card p.doc-bio { margin-top: 26px; }
   .doc-cred, .doctors-band .doctor-card p.doc-bio { font-size: 17px; }
 }
+
+/* Journal / Learn cards: roomier, calmer */
+.article-grid { gap: 28px; }
+.article-card { padding: 40px 38px 34px; gap: 0; }
+.article-card .ac-meta { display: flex; align-items: center; gap: 10px; font-size: 12.5px; font-weight: 600; letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted); }
+.article-card .ac-meta .cover { width: 28px; margin-right: 4px; }
+.article-card .ac-dot { opacity: 0.5; }
+.article-card h3 { margin-top: 26px; font-size: 27px; line-height: 1.2; }
+.article-card .ac-sum { margin-top: 16px; font-size: 16.5px; line-height: 1.7; color: var(--ink-2); }
+.article-card .ac-go { margin-top: auto; padding-top: 28px; display: inline-flex; align-items: center; gap: 8px; font-size: 12.5px; font-weight: 600; letter-spacing: 0.18em; text-transform: uppercase; color: var(--brand); }
+.article-card:hover .ac-go svg { transform: translateX(4px); }
+.article-card .ac-go svg { transition: transform 0.25s; }
+.learn-chips { gap: 12px; }
+.learn-chips .chip { padding: 12px 22px; }
+@media (max-width: 900px) { .article-grid { gap: 20px; } }
+@media (max-width: 620px) {
+  .article-card { padding: 30px 24px 26px; }
+  .article-card h3 { margin-top: 20px; font-size: 24px; }
+}

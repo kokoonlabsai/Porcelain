@@ -15,20 +15,20 @@ export function LearnList({ inPortal = false }) {
     <>
       <div className="eyebrow">Learn</div>
       <h1 className="serif mt-8" style={{ fontSize: 'clamp(32px, 5vw, 46px)' }}>Straight answers about your skin and hair</h1>
-      <p className="muted mt-12" style={{ maxWidth: 600 }}>Written by our dermatologists: what procedures involve, routines that actually work, and the myths worth forgetting.</p>
-      <div className="chips mt-24">
+      <p className="muted mt-16" style={{ maxWidth: 640, fontSize: 19, lineHeight: 1.65 }}>Written by our dermatologists: what procedures involve, routines that actually work, and the myths worth forgetting.</p>
+      <div className="chips learn-chips mt-32">
         <button className={`chip ${!c ? 'on' : ''}`} onClick={() => setParams({})}>All</button>
         {ARTICLE_CATS.map((x) => (
           <button key={x.id} className={`chip ${c === x.id ? 'on' : ''}`} onClick={() => setParams({ c: x.id })}>{x.label}</button>
         ))}
       </div>
-      <div className="mt-24">
+      <div className="mt-48">
         {error ? <ErrorBox error={error} onRetry={reload} /> : loading ? (
-          <div className="grid g-3">{[0, 1, 2, 3, 4, 5].map((i) => <Skeleton key={i} h={170} />)}</div>
+          <div className="grid g-3 article-grid">{[0, 1, 2, 3, 4, 5].map((i) => <Skeleton key={i} h={170} />)}</div>
         ) : !data.articles.length ? (
           <Empty icon={BookOpen} title="Nothing here yet" />
         ) : (
-          <div className="grid g-3">{data.articles.map((a) => <ArticleCard key={a.slug} a={a} base={base} />)}</div>
+          <div className="grid g-3 article-grid">{data.articles.map((a) => <ArticleCard key={a.slug} a={a} base={base} />)}</div>
         )}
       </div>
     </>
@@ -65,7 +65,7 @@ export function Article({ inPortal = false }) {
       {data.related.length > 0 && (
         <>
           <h2 className="serif mt-32" style={{ fontSize: 26 }}>Keep reading</h2>
-          <div className="grid g-3 mt-16">{data.related.map((a) => <ArticleCard key={a.slug} a={a} base={base} />)}</div>
+          <div className="grid g-3 article-grid mt-24">{data.related.map((a) => <ArticleCard key={a.slug} a={a} base={base} />)}</div>
         </>
       )}
     </article>

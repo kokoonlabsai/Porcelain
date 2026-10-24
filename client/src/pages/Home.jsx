@@ -326,12 +326,15 @@ function HoursTable({ hours }) {
 export function ArticleCard({ a, base = '/learn' }) {
   return (
     <Link to={`${base}/${a.slug}`} className="article-card">
-      <div className="row between">
+      <div className="ac-meta">
         <span className="cover" style={{ background: CAT_COLORS[a.category] }} />
-        <span className="tiny muted" style={{ letterSpacing: '0.18em', textTransform: 'uppercase' }}>{catLabel(a.category)} · {a.read_minutes} min</span>
+        <span>{catLabel(a.category)}</span>
+        <span className="ac-dot">·</span>
+        <span>{a.read_minutes} min read</span>
       </div>
       <h3>{a.title}</h3>
-      <p className="small muted">{a.summary}</p>
+      <p className="ac-sum">{a.summary}</p>
+      <span className="ac-go">Read <ArrowRight size={15} /></span>
     </Link>
   );
 }

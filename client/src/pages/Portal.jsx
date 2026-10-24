@@ -165,7 +165,7 @@ export function PortalHome() {
           {data.reads.length > 0 && (
             <div>
               <div className="row between"><div className="card-title">Worth a read</div><Link className="link small" to="/portal/learn">More</Link></div>
-              <div className="grid g-2 mt-12">{data.reads.map((a) => <ArticleCard key={a.slug} a={a} base="/portal/learn" />)}</div>
+              <div className="grid g-2 article-grid mt-16">{data.reads.map((a) => <ArticleCard key={a.slug} a={a} base="/portal/learn" />)}</div>
             </div>
           )}
         </div>
