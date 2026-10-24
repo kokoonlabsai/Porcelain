@@ -1,12 +1,12 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { CalendarPlus, ChevronLeft, ChevronRight, Pill, Users, UserCheck, Stethoscope, BellRing, MessageCircle, Phone, CalendarDays, FileText, MoreHorizontal } from 'lucide-react';
+import { ChevronLeft, ChevronRight, ChevronDown, Plus, BellRing, MessageCircle, Phone, CalendarDays, MoreHorizontal } from 'lucide-react';
 import { api } from '../lib/api';
 import { useApp, useLoad } from '../lib/store';
 import {
   todayISO, addDays, fmtDateLong, fmtTime, fmtDate, concernLabel, relDay, displayPhone, whatsappLink, CONCERNS, firstName, greeting, parseISO,
 } from '../lib/format';
-import { Button, Field, Modal, StatusBadge, Empty, ErrorBox, Skeleton, ConcernIcon, fieldErrors } from '../components/ui';
+import { Button, Field, Modal, StatusBadge, Empty, ErrorBox, Skeleton, fieldErrors } from '../components/ui';
 
 export function StaffToday() {
   const { user, settings } = useApp();
@@ -19,37 +19,35 @@ export function StaffToday() {
           <div className="eyebrow">{fmtDateLong(todayISO())}</div>
           <h1 className="mt-4">{greeting()}, {firstName(user.name)}</h1>
         </div>
+        {d && (
+          <div className="day-summary">
+            <span><b>{d.today.checked_in}</b> waiting</span>
+            <span><b>{d.today.waiting}</b> to come</span>
+            <span><b>{d.today.completed}</b> seen</span>
+            <Link to="/staff/pharmacy"><b>{d.pharmacy_pending}</b> at pharmacy</Link>
+          </div>
+        )}
       </div>
-      {dash.error ? <ErrorBox error={dash.error} onRetry={dash.reload} /> : (
-        <div className="grid g-4 keep-2">
-          <Stat icon={CalendarDays} label="Today’s appointments" value={d?.today.total} />
-          <Stat icon={Users} label="Waiting / checked in" value={d ? `${d.today.waiting} / ${d.today.checked_in}` : null} />
-          <Stat icon={Stethoscope} label="Seen today" value={d?.today.completed} />
-          <Link to="/staff/pharmacy"><Stat icon={Pill} label="Prescriptions to hand over" value={d?.pharmacy_pending} accent /></Link>
-        </div>
-      )}
-      <div className="grid g-side mt-24">
+      {dash.error && <ErrorBox error={dash.error} onRetry={dash.reload} />}
+      <div className="grid g-side">
         <div><DayAppointments onChange={dash.reload} /></div>
         <div className="card">
-          <div className="row between">
-            <div className="card-title row gap-6"><BellRing size={18} color="var(--clay)" />Follow-ups due</div>
-            <span className="tiny muted">next 7 days & overdue</span>
-          </div>
-          <p className="small muted mt-4">Patients who haven’t booked their next visit yet.</p>
+          <div className="card-title row gap-6"><BellRing size={18} color="var(--clay)" />Follow-ups due</div>
+          <p className="small muted mt-4">Not booked yet · next 7 days</p>
           {!d ? <Skeleton h={120} style={{ marginTop: 12 }} /> : !d.follow_ups.length ? (
-            <Empty icon={BellRing} title="All caught up">No pending follow-ups this week.</Empty>
+            <Empty icon={BellRing} title="All caught up" />
           ) : (
             <div className="list mt-8">
               {d.follow_ups.map((f) => (
                 <div key={f.visit_id} className="list-item">
                   <div className="grow">
                     <Link to={`/staff/patients/${f.patient_id}`} className="strong small">{f.name}</Link>
-                    <div className="tiny muted">{f.diagnosis ? `${f.diagnosis} · ` : ''}due {relDay(f.follow_up_date).toLowerCase()}</div>
+                    <div className="tiny muted">Due {relDay(f.follow_up_date).toLowerCase()}</div>
                   </div>
-                  <a className="btn sm icon" href={`tel:${f.phone}`} title="Call"><Phone size={15} /></a>
-                  <a className="btn sm icon" target="_blank" rel="noreferrer" title="WhatsApp"
+                  <a className="btn sm icon ghost" href={`tel:${f.phone}`} title="Call"><Phone size={16} /></a>
+                  <a className="btn sm icon ghost" target="_blank" rel="noreferrer" title="WhatsApp"
                     href={whatsappLink(f.phone, `Hi ${firstName(f.name)}, this is ${settings.clinic_name}. Your follow-up visit is due around ${fmtDate(f.follow_up_date)}. Would you like us to book a slot for you?`)}>
-                    <MessageCircle size={15} />
+                    <MessageCircle size={16} />
                   </a>
                 </div>
               ))}
@@ -61,51 +59,57 @@ export function StaffToday() {
   );
 }
 
-function Stat({ icon: Icon, label, value, accent }) {
-  return (
-    <div className="card stat" style={accent ? { background: 'var(--clay-soft)', borderColor: 'transparent' } : undefined}>
-      <div className="row between"><span className="l">{label}</span><Icon size={18} color={accent ? 'var(--clay)' : 'var(--brand)'} /></div>
-      <div className="v">{value ?? <Skeleton h={30} w={60} />}</div>
-    </div>
-  );
-}
+/** Waiting room first, then the rest of the day; seen and cancelled patients fold away. */
+const GROUPS = [
+  { id: 'waiting', label: 'Waiting', match: (a) => a.status === 'checked_in' },
+  { id: 'upcoming', label: 'Upcoming', match: (a) => a.status === 'booked' },
+  { id: 'seen', label: 'Seen', match: (a) => a.status === 'completed', folded: true },
+  { id: 'missed', label: 'Cancelled & no-shows', match: (a) => ['cancelled', 'no_show'].includes(a.status), folded: true },
+];
 
 /** One day's appointments with date navigation and status actions. */
 export function DayAppointments({ onChange, initialDate }) {
   const [date, setDate] = useState(initialDate || todayISO());
   const [booking, setBooking] = useState(false);
+  const [open, setOpen] = useState({});
   const { data, error, loading, reload } = useLoad(() => api('/staff/appointments', { query: { date } }), [date]);
   const changed = () => { reload(); onChange?.(); };
   const list = data?.appointments || [];
-  const active = list.filter((a) => !['cancelled', 'no_show'].includes(a.status));
-  const inactive = list.filter((a) => ['cancelled', 'no_show'].includes(a.status));
+  const dayName = relDay(date) === fmtDate(date) ? parseISO(date).toLocaleDateString('en-IN', { weekday: 'long' }) : relDay(date);
   return (
     <div className="card">
-      <div className="row between wrap">
-        <div className="row gap-6">
-          <button className="btn sm icon" onClick={() => setDate(addDays(date, -1))} aria-label="Previous day"><ChevronLeft size={17} /></button>
-          <div style={{ minWidth: 150 }}>
-            <div className="card-title">{relDay(date) === fmtDate(date) ? parseISO(date).toLocaleDateString('en-IN', { weekday: 'long' }) : relDay(date)}</div>
-            <div className="tiny muted">{fmtDateLong(date)}</div>
-          </div>
-          <button className="btn sm icon" onClick={() => setDate(addDays(date, 1))} aria-label="Next day"><ChevronRight size={17} /></button>
+      <div className="row between">
+        <div className="day-nav">
+          <button className="btn sm icon ghost" onClick={() => setDate(addDays(date, -1))} aria-label="Previous day"><ChevronLeft size={18} /></button>
+          <button type="button" className="day-label" title="Pick a date" onClick={(e) => { const i = e.currentTarget.querySelector('input'); try { i.showPicker(); } catch { i.focus(); } }}>
+            <span className="card-title">{dayName}</span>
+            <span className="tiny muted">{fmtDate(date, { weekday: 'short' })}</span>
+            <input type="date" tabIndex={-1} value={date} onChange={(e) => e.target.value && setDate(e.target.value)} aria-label="Pick a date" />
+          </button>
+          <button className="btn sm icon ghost" onClick={() => setDate(addDays(date, 1))} aria-label="Next day"><ChevronRight size={18} /></button>
           {date !== todayISO() && <button className="link small" onClick={() => setDate(todayISO())}>Today</button>}
-          <input type="date" className="input sm hide-sm" style={{ width: 150 }} value={date} onChange={(e) => e.target.value && setDate(e.target.value)} />
         </div>
-        <Button className="primary sm" onClick={() => setBooking(true)}><CalendarPlus size={16} />Book / walk-in</Button>
+        <Button className="primary sm" onClick={() => setBooking(true)}><Plus size={16} />Walk-in</Button>
       </div>
       <div className="mt-16">
         {error ? <ErrorBox error={error} onRetry={reload} /> : loading ? (
-          <div className="stack">{[0, 1, 2].map((i) => <Skeleton key={i} h={70} />)}</div>
+          <div className="stack">{[0, 1, 2].map((i) => <Skeleton key={i} h={64} />)}</div>
         ) : !list.length ? (
           <Empty icon={CalendarDays} title="No appointments">Nobody is booked for this day yet.</Empty>
-        ) : (
-          <>
-            {active.map((a) => <AppointmentRow key={a.id} a={a} onChange={changed} />)}
-            {inactive.length > 0 && <div className="tiny muted strong mt-16 mb-8" style={{ marginBottom: 8 }}>CANCELLED & NO-SHOWS</div>}
-            {inactive.map((a) => <AppointmentRow key={a.id} a={a} onChange={changed} />)}
-          </>
-        )}
+        ) : GROUPS.map((g) => {
+          const rows = list.filter(g.match);
+          if (!rows.length) return null;
+          const shown = !g.folded || open[g.id];
+          return (
+            <div key={g.id} className="appt-group">
+              <button className="appt-group-head" onClick={() => g.folded && setOpen({ ...open, [g.id]: !open[g.id] })} disabled={!g.folded}>
+                <span>{g.label}</span><span className="count">{rows.length}</span>
+                {g.folded && <ChevronDown size={16} style={{ transform: shown ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }} />}
+              </button>
+              {shown && rows.map((a) => <AppointmentRow key={a.id} a={a} onChange={changed} />)}
+            </div>
+          );
+        })}
       </div>
       {booking && <BookingModal date={date} onClose={() => setBooking(false)} onDone={() => { setBooking(false); changed(); }} />}
     </div>
@@ -117,6 +121,7 @@ export function AppointmentRow({ a, onChange }) {
   const nav = useNavigate();
   const [menu, setMenu] = useState(false);
   const clinician = user.role === 'doctor' || user.role === 'admin';
+  const active = ['booked', 'checked_in'].includes(a.status);
   const setStatus = async (status) => {
     setMenu(false);
     try {
@@ -124,40 +129,38 @@ export function AppointmentRow({ a, onChange }) {
       onChange();
     } catch (e) { toast(e.message, 'err'); }
   };
+  const consult = () => nav(`/staff/visits/new?patient=${a.patient_id}&appointment=${a.id}`);
+
+  // One clear action per row: doctors consult, reception checks people in.
+  let action = null;
+  if (a.visit_id) action = <button className="link small" onClick={() => nav(`/staff/visits/${a.visit_id}`)}>View</button>;
+  else if (clinician && active) action = <Button className="primary sm" onClick={consult}>Consult</Button>;
+  else if (a.status === 'booked') action = <Button className="sm" onClick={() => setStatus('checked_in')}>Check in</Button>;
+
+  const note = [concernLabel(a.concern), a.visit_count === 0 ? 'First visit' : null, a.description ? `“${a.description}”` : null].filter(Boolean).join(' · ');
   return (
     <div className={`appt-row ${a.status}`}>
-      <div>
-        <div className="t">{fmtTime(a.start_time)}</div>
-        <div className="tiny muted">{a.source === 'online' ? 'Online' : a.source === 'phone' ? 'Phone' : 'Walk-in'}</div>
-      </div>
-      <div className="row" style={{ minWidth: 0 }}>
-        <ConcernIcon concern={a.concern} size={17} box={36} />
-        <div className="grow">
-          <div className="row gap-6 wrap">
-            <Link to={`/staff/patients/${a.patient_id}`} className="strong">{a.name}</Link>
-            <StatusBadge status={a.status} />
-            {a.visit_count === 0 && <span className="badge brand">New</span>}
-          </div>
-          <div className="small muted" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {concernLabel(a.concern)} · {displayPhone(a.phone)}{a.description ? ` · “${a.description}”` : ''}
-          </div>
-        </div>
+      <div className="t">{fmtTime(a.start_time)}</div>
+      <div style={{ minWidth: 0 }}>
+        <Link to={`/staff/patients/${a.patient_id}`} className="appt-name">{a.name}</Link>
+        <div className="appt-note">{note}</div>
       </div>
       <div className="row acts gap-6" style={{ justifyContent: 'flex-end', position: 'relative' }}>
-        {a.status === 'booked' && <Button className="sm" onClick={() => setStatus('checked_in')}><UserCheck size={15} />Check in</Button>}
-        {a.visit_id ? (
-          <Button className="sm" onClick={() => nav(`/staff/visits/${a.visit_id}`)}><FileText size={15} />Prescription</Button>
-        ) : clinician && ['booked', 'checked_in'].includes(a.status) ? (
-          <Button className="primary sm" onClick={() => nav(`/staff/visits/new?patient=${a.patient_id}&appointment=${a.id}`)}><Stethoscope size={15} />Consult</Button>
-        ) : null}
-        <button className="btn sm icon ghost" onClick={() => setMenu(!menu)} aria-label="More"><MoreHorizontal size={17} /></button>
+        {action}
+        <button className="btn sm icon ghost" onClick={() => setMenu(!menu)} aria-label="More"><MoreHorizontal size={18} /></button>
         {menu && (
-          <div className="suggest" style={{ left: 'auto', width: 190 }} onMouseLeave={() => setMenu(false)}>
+          <div className="suggest appt-menu" onMouseLeave={() => setMenu(false)}>
+            <div className="appt-menu-info">
+              <div className="strong small">{displayPhone(a.phone)}</div>
+              <div className="tiny muted">{a.source === 'online' ? 'Booked online' : a.source === 'phone' ? 'Booked by phone' : 'Walk-in'} · <StatusBadge status={a.status} /></div>
+            </div>
+            <a href={`tel:${a.phone}`}>Call {firstName(a.name)}</a>
+            {clinician && a.status === 'booked' && <button onClick={() => setStatus('checked_in')}>Check in</button>}
+            {!clinician && active && !a.visit_id && <button onClick={consult}>Start consultation</button>}
             {a.status !== 'booked' && <button onClick={() => setStatus('booked')}>Mark as booked</button>}
             {a.status !== 'completed' && <button onClick={() => setStatus('completed')}>Mark as seen</button>}
             {a.status !== 'no_show' && <button onClick={() => setStatus('no_show')}>No-show</button>}
             {a.status !== 'cancelled' && <button style={{ color: 'var(--red)' }} onClick={() => setStatus('cancelled')}>Cancel appointment</button>}
-            <a href={`tel:${a.phone}`} style={{ display: 'block', padding: '9px 12px' }}>Call {firstName(a.name)}</a>
           </div>
         )}
       </div>
