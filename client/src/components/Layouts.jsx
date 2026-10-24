@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link, NavLink, Outlet, useNavigate } from 'react-router-dom';
 import {
-  ShoppingBag, Package, Mail, Home, CalendarPlus, ClipboardList, CalendarDays, BookOpen, UserRound, LogOut, Users, Pill, CalendarClock, Settings, Newspaper, UserCog, LayoutDashboard, KeyRound, MapPin, Phone, MessageCircle,
+  Layers, ShoppingBag, Package, Mail, Home, CalendarPlus, ClipboardList, CalendarDays, BookOpen, UserRound, LogOut, Users, Pill, CalendarClock, Settings, Newspaper, UserCog, LayoutDashboard, KeyRound, MapPin, Phone, MessageCircle,
 } from 'lucide-react';
 import { useApp } from '../lib/store';
 import { api } from '../lib/api';
@@ -224,6 +224,7 @@ export function StaffLayout() {
       { to: '/staff/schedule', icon: CalendarClock, label: 'Schedule & slots' },
       { to: '/staff/staff', icon: UserCog, label: 'Staff accounts' },
       { to: '/staff/products', icon: Package, label: 'Products' },
+      { to: '/staff/packages', icon: Layers, label: 'Treatment packages' },
       { to: '/staff/articles', icon: Newspaper, label: 'Learn articles' },
       { to: '/staff/settings', icon: Settings, label: 'Clinic details' },
     ] : []),

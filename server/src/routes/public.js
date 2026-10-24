@@ -5,6 +5,8 @@ const { normalizePhone } = require('../phone');
 const { slotsFor, upcomingDays } = require('../slots');
 const { createAppointment } = require('../appointments');
 const mail = require('../mail');
+const rzp = require('../razorpay');
+const deposits = require('../deposits');
 const { HttpError, wrap, optionalAuth, signToken, publicUser, isISODate } = require('../util');
 
 const router = express.Router();
@@ -40,8 +42,9 @@ router.post(
   '/appointments',
   optionalAuth(),
   wrap(async (req, res) => {
-    const { appointment, patient } = await createAppointment(req.body || {}, req.user);
-    if (patient.email) mail.bookingConfirmation(patient, appointment).catch(() => {});
+    const { appointment, patient, razorpay } = await createAppointment(req.body || {}, req.user);
+    // With a deposit, the confirmation goes out once it's paid.
+    if (patient.email && !razorpay) mail.bookingConfirmation(patient, appointment).catch(() => {});
     const hasVisits = !!(await db.visits.findOne({ patient_id: patient._id }, { projection: { _id: 1 } }));
     res.status(201).json({
       appointment: out(appointment),
@@ -49,7 +52,38 @@ router.post(
       // A guest without an account (and with no medical records yet) can set a password right away.
       can_create_account: !req.user && !patient.password_hash && !hasVisits,
       has_account: !!patient.password_hash,
+      razorpay: razorpay || null,
     });
+  })
+);
+
+/** Deposit paid in Razorpay's window: check the signature, then confirm the booking. */
+router.post(
+  '/appointments/:id/deposit/verify',
+  wrap(async (req, res) => {
+    const a = await db.appointments.findOne({ _id: oid(req.params.id) });
+    const b = req.body || {};
+    if (!a?.deposit || a.deposit.razorpay_order_id !== b.razorpay_order_id) throw new HttpError(404, 'Booking not found');
+    if (!rzp.verifyPayment(b)) throw new HttpError(400, 'We couldn’t confirm that payment. If money was taken, it will be matched automatically — or call the clinic.');
+    await deposits.markDepositPaid(a, b.razorpay_payment_id, 'checkout');
+    res.json({ appointment: out(await db.appointments.findOne({ _id: a._id })) });
+  })
+);
+
+/** Closed the payment window without paying: free the slot now rather than after the hold. */
+router.post(
+  '/appointments/:id/deposit/abandon',
+  wrap(async (req, res) => {
+    const a = await db.appointments.findOne({ _id: oid(req.params.id) });
+    if (!a || a.status !== 'pending_payment' || a.deposit?.razorpay_order_id !== req.body?.razorpay_order_id) return res.json({ ok: true });
+    try {
+      const paid = await deposits.findPayment(a);
+      if (paid) { await deposits.markDepositPaid(a, paid.id, 'reconcile'); return res.json({ ok: true, paid: true }); }
+    } catch {
+      return res.json({ ok: true }); // Let the hold expiry decide later.
+    }
+    await db.appointments.updateOne({ _id: a._id, status: 'pending_payment' }, { $set: { status: 'cancelled', cancel_reason: 'deposit_abandoned', 'deposit.status': 'failed' } });
+    res.json({ ok: true });
   })
 );
 

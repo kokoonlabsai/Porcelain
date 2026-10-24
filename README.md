@@ -63,6 +63,19 @@ The website and clinic app for Porcelain Skin Clinic, a dermatology and aestheti
 - **Patient portal:** patients see their orders there. Customers get an email confirmation if they gave an email.
 - **Demo products:** `seed:demo` adds sample products with drawn placeholders instead of photos.
 
+### Deposits, prescribed products and packages
+- **Booking deposit:** a ₹1,000 Razorpay deposit secures **procedures** and **weekend** slots booked online.
+  - The slot is held for 15 minutes while the patient pays, then confirmed once the payment signature checks out.
+  - The deposit is adjusted against the bill when the consultation is saved.
+  - If the patient cancels at least 24 hours ahead, it's refunded automatically. Later cancellations and no-shows keep it. When the clinic cancels, it refunds by default.
+  - Bookings made by staff never need a deposit, and none are taken while Razorpay isn't set up.
+  - The amount, the rules and the refund window are under **Clinic details**.
+- **Prescribed products:** the medicine search on the consultation screen also finds shop products, marked "In shop". Patients then see the product on their prescription with **Order online** (or **Buy again** once collected).
+- **Treatment packages:** admins create templates under **Admin → Treatment packages** (e.g. "Laser hair reduction — 6 sessions").
+  - Staff sell them from a patient's page and record payments.
+  - On the consultation screen, "Use a session" ticks one off. It's counted once per visit, and unticking gives it back.
+  - Patients see "3 of 6 sessions done" in their portal.
+
 ### Privacy rules built in
 - Patients only ever see their own records, and only the photos shared with them.
 - Private notes and patient medical notes are shown to doctors and admins only. Reception doesn't see them.
@@ -113,6 +126,7 @@ This uses a cheap setup: [MongoDB Atlas](https://www.mongodb.com/atlas) for the 
 | `attachments` | Photos and PDFs, stored as binary (up to 6 MB each) |
 | `availability`, `closures` | Weekly opening windows and days off |
 | `articles` | Learn articles |
+| `packages`, `patient_packages` | Package templates, and the courses patients bought (with the visits that used each session) |
 | `products`, `orders` | Shop products (photo stored as binary) and orders (items copied at the price paid) |
 | `settings` | One document (`_id: "clinic"`) with the clinic details |
 

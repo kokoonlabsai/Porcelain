@@ -1,7 +1,7 @@
 import { useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import {
-  CalendarPlus, BellRing, Pill, CheckCircle2, ClipboardList, ArrowRight, Printer, CalendarDays, Stethoscope, Images, MapPin, Clock, Mail,
+  Layers, ShoppingBag, Lock, CalendarPlus, BellRing, Pill, CheckCircle2, ClipboardList, ArrowRight, Printer, CalendarDays, Stethoscope, Images, MapPin, Clock, Mail,
 } from 'lucide-react';
 import { api } from '../lib/api';
 import { useApp, useLoad } from '../lib/store';
@@ -10,6 +10,8 @@ import {
 } from '../lib/format';
 import { Button, ConcernIcon, Empty, ErrorBox, PageSkeleton, StatusBadge, PhotoGrid, Field, Badge, Modal } from '../components/ui';
 import { ArticleCard } from './Home';
+import ProductImage from '../components/ProductImage';
+import { useCart, inr } from '../lib/cart';
 
 function CalTile({ date }) {
   const d = parseISO(date);
@@ -21,7 +23,15 @@ function CalTile({ date }) {
   );
 }
 
-export function Medicines({ items, showStatus = true }) {
+/** Prescribed medicines. For patients (`shop`), items the clinic stocks can be ordered online. */
+export function Medicines({ items, showStatus = true, shop = false }) {
+  const cart = useCart();
+  const nav = useNavigate();
+  const order = (p) => {
+    cart.add(p);
+    cart.setOpen(false);
+    nav('/shop/checkout');
+  };
   return (
     <div>
       {items.map((i) => (
@@ -30,13 +40,54 @@ export function Medicines({ items, showStatus = true }) {
           <div className="grow">
             <div className="row between top">
               <div className="strong">{i.medicine}{i.kind && <span className="muted" style={{ fontWeight: 500 }}> · {i.kind}</span>}</div>
-              {showStatus && (i.dispensed ? <Badge tone="green">Collected</Badge> : <Badge tone="clay">To collect</Badge>)}
+              {showStatus && (i.dispensed ? <Badge tone="green">Collected</Badge> : <Badge tone="clay">Ready at the pharmacy</Badge>)}
             </div>
             <div className="small" style={{ color: 'var(--ink-2)' }}>{[i.dosage, i.frequency, i.duration].filter(Boolean).join(' · ')}</div>
             {i.instructions && <div className="small muted mt-4">{i.instructions}</div>}
+            {shop && i.product && (
+              <div className="rx-shop">
+                <ProductImage product={i.product} className="thumb sm" />
+                <div className="grow">
+                  <div className="small strong">{i.product.name}{i.product.size ? ` · ${i.product.size}` : ''}</div>
+                  <div className="small muted">{inr(i.product.price)} · {i.dispensed ? 'Running low? Order a refill.' : 'Collect at the clinic, or have it delivered.'}</div>
+                </div>
+                {i.product.stock > 0
+                  ? <button className="add-btn" onClick={() => order(i.product)}><ShoppingBag size={15} />{i.dispensed ? 'Buy again' : 'Order online'}</button>
+                  : <span className="tiny muted">Out of stock</span>}
+              </div>
+            )}
           </div>
         </div>
       ))}
+    </div>
+  );
+}
+
+/** Courses of sessions bought at the clinic, with progress. */
+export function TreatmentPlans({ packages }) {
+  if (!packages?.length) return null;
+  return (
+    <div className="card">
+      <div className="card-title row gap-6"><Layers size={18} color="var(--brand)" />Your treatment plans</div>
+      <div className="stack gap-20 mt-16">
+        {packages.map((p) => (
+          <div key={p.id}>
+            <div className="row between top">
+              <div className="strong">{p.name}</div>
+              {p.status === 'completed' ? <Badge tone="green">Completed</Badge> : <span className="small strong" style={{ color: 'var(--brand)' }}>{p.sessions_used} of {p.sessions_total}</span>}
+            </div>
+            <div className="plan-bar mt-8" role="progressbar" aria-valuemin={0} aria-valuemax={p.sessions_total} aria-valuenow={p.sessions_used}>
+              {Array.from({ length: p.sessions_total }).map((_, n) => <span key={n} className={n < p.sessions_used ? 'on' : ''} />)}
+            </div>
+            <div className="tiny muted mt-8">
+              {p.status === 'completed' ? 'All sessions done.' : `${p.remaining} session${p.remaining === 1 ? '' : 's'} left`}
+              {p.sessions.length > 0 && ` · last on ${fmtDate(p.sessions[p.sessions.length - 1].date)}`}
+              {p.status !== 'completed' && p.interval_days && ` · every ${p.interval_days} days`}
+            </div>
+          </div>
+        ))}
+      </div>
+      {packages.some((p) => p.status === 'active') && <Link to="/portal/book?concern=procedure" className="btn sm mt-16">Book your next session</Link>}
     </div>
   );
 }
@@ -97,7 +148,7 @@ export function PortalHome() {
                 </div>
                 <Link className="btn sm" to={`/portal/visits/${v.id}`}>Open</Link>
               </div>
-              {v.items.length > 0 ? <div className="mt-8"><Medicines items={v.items} /></div> : <p className="small muted mt-16">No medicines were prescribed at this visit.</p>}
+              {v.items.length > 0 ? <div className="mt-8"><Medicines items={v.items} shop /></div> : <p className="small muted mt-16">No medicines were prescribed at this visit.</p>}
               {v.advice && <div className="notice mt-16"><Stethoscope size={18} /><div className="pre small" style={{ fontWeight: 500 }}>{v.advice}</div></div>}
               {v.items.some((i) => !i.dispensed) && (
                 <p className="small muted mt-16">Show this screen or tell your name at the pharmacy desk — they already have your prescription.</p>
@@ -108,6 +159,8 @@ export function PortalHome() {
               <Empty icon={ClipboardList} title="No prescriptions yet">After your visit, the doctor’s prescription and advice will appear here.</Empty>
             </div>
           )}
+
+          <TreatmentPlans packages={data.packages} />
 
           {data.reads.length > 0 && (
             <div>
@@ -153,8 +206,8 @@ function UpcomingAppt({ a, onChange }) {
   const cancel = async () => {
     setBusy(true);
     try {
-      await api(`/me/appointments/${a.id}/cancel`, { method: 'POST' });
-      toast('Appointment cancelled');
+      const r = await api(`/me/appointments/${a.id}/cancel`, { method: 'POST' });
+      toast(r.deposit === 'refunded' ? 'Cancelled — your deposit is being refunded' : 'Appointment cancelled');
       onChange();
     } catch (e) {
       toast(e.message, 'err');
@@ -168,7 +221,7 @@ function UpcomingAppt({ a, onChange }) {
       <CalTile date={a.date} />
       <div className="grow">
         <div className="strong">{relDay(a.date)} · {fmtTime(a.start_time)}</div>
-        <div className="small muted">{concernLabel(a.concern)}</div>
+        <div className="small muted">{concernLabel(a.concern)}{a.deposit?.status === 'paid' ? ` · ${inr(a.deposit.amount)} deposit paid` : ''}</div>
         <div className="row gap-16 mt-4">
           <button className="link small" onClick={() => downloadIcs({ title: `Appointment at ${settings.clinic_name}`, date: a.date, start: a.start_time, end: a.end_time, location: settings.address })}>Add to calendar</button>
           {a.status === 'booked' && <button className="link small" style={{ color: 'var(--red)' }} onClick={() => setConfirm(true)}>Cancel</button>}
@@ -177,6 +230,16 @@ function UpcomingAppt({ a, onChange }) {
       {confirm && (
         <Modal title="Cancel this appointment?" onClose={() => setConfirm(false)}>
           <p className="muted">{fmtDateLong(a.date)} at {fmtTime(a.start_time)}. The slot will be given to someone else.</p>
+          {a.deposit?.status === 'paid' && (
+            <div className="notice mt-16 small">
+              <Lock size={16} />
+              <div>
+                {(new Date(`${a.date}T${a.start_time}`) - Date.now()) / 3_600_000 >= (Number(settings.deposit_refund_hours) || 24)
+                  ? `Your ${inr(a.deposit.amount)} deposit will be refunded to your original payment method.`
+                  : `This is less than ${settings.deposit_refund_hours || 24} hours before your visit, so the ${inr(a.deposit.amount)} deposit can’t be refunded.`}
+              </div>
+            </div>
+          )}
           <div className="row mt-24" style={{ justifyContent: 'flex-end' }}>
             <Button className="ghost" onClick={() => setConfirm(false)}>Keep it</Button>
             <Button className="primary" style={{ background: 'var(--red)', borderColor: 'var(--red)' }} loading={busy} onClick={cancel}>Cancel appointment</Button>
@@ -264,7 +327,13 @@ export function VisitView({ v, back, print }) {
       {v.items.length > 0 && (
         <div className="card mt-16">
           <div className="row between"><div className="card-title">Medicines</div><Pill size={20} color="var(--clay)" /></div>
-          <div className="mt-8"><Medicines items={v.items} /></div>
+          <div className="mt-8"><Medicines items={v.items} shop /></div>
+        </div>
+      )}
+      {v.package_sessions?.length > 0 && (
+        <div className="card mt-16">
+          <div className="card-title row gap-6"><Layers size={18} color="var(--brand)" />Treatment plan</div>
+          {v.package_sessions.map((p) => <p key={p.id} className="mt-8">{p.name} — session <b>{p.number} of {p.total}</b></p>)}
         </div>
       )}
       {v.advice && (

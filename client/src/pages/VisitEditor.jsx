@@ -1,11 +1,12 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { Plus, Trash2, Save, Printer, Mail, History, Pill, CalendarDays, EyeOff, CheckCircle2 } from 'lucide-react';
+import { Plus, Trash2, Save, Printer, Mail, History, Pill, CalendarDays, EyeOff, CheckCircle2, Layers } from 'lucide-react';
 import { api } from '../lib/api';
 import { useApp, useLoad } from '../lib/store';
 import { todayISO, addDays, fmtDate, fmtDateLong, relDay, concernLabel, displayPhone, age, CONCERNS } from '../lib/format';
 import { Avatar, Badge, Button, ErrorBox, Field, PageSkeleton } from '../components/ui';
 import { PatientPhotos } from './StaffPatients';
+import { inr } from '../lib/cart';
 import { Medicines } from './Portal';
 
 const FREQUENCIES = ['Once daily', 'Twice daily', 'Three times daily', 'At night', 'In the morning', 'Alternate days', 'Twice a week', 'As needed'];
@@ -39,7 +40,7 @@ export default function VisitEditor() {
 function Editor({ data, appointmentId, reload }) {
   const { user, toast } = useApp();
   const nav = useNavigate();
-  const { patient: p, visit, visits, appointments } = data;
+  const { patient: p, visit, visits, appointments, packages = [] } = data;
   const clinician = user.role === 'doctor' || user.role === 'admin';
   const appt = appointments.find((a) => String(a.id) === String(appointmentId));
   const previous = visits.filter((v) => v.id !== visit?.id);
@@ -56,6 +57,9 @@ function Editor({ data, appointmentId, reload }) {
   }));
   const [items, setItems] = useState(() => (visit?.items?.length ? visit.items.map((i) => ({ ...i, key: i.id })) : [blankItem()]));
   const [sendEmail, setSendEmail] = useState(!!p.email);
+  // Package sessions this visit uses: ticked ones count one session each when saved.
+  const [packageSessions, setPackageSessions] = useState(() => (visit?.package_sessions || []).map((x) => x.id));
+  const usable = packages.filter((pk) => pk.status === 'active' || packageSessions.includes(pk.id));
   const [busy, setBusy] = useState(false);
   const [dirty, setDirty] = useState(false);
   const set = (k) => (e) => { setF({ ...f, [k]: e.target.value }); setDirty(true); };
@@ -73,7 +77,7 @@ function Editor({ data, appointmentId, reload }) {
   const repeatLast = () => {
     const last = previous.find((v) => v.items.length);
     if (!last) return;
-    setItems((list) => [...list.filter((i) => i.medicine), ...last.items.map(({ medicine, kind, dosage, frequency, duration, instructions }) => ({ ...blankItem(), medicine, kind, dosage, frequency, duration, instructions }))]);
+    setItems((list) => [...list.filter((i) => i.medicine), ...last.items.map(({ medicine, kind, dosage, frequency, duration, instructions, product_id }) => ({ ...blankItem(), medicine, kind, dosage, frequency, duration, instructions, product_id }))]);
     setDirty(true);
     toast(`Copied ${last.items.length} medicines from ${fmtDate(last.date)}`);
   };
@@ -81,7 +85,7 @@ function Editor({ data, appointmentId, reload }) {
   const save = async () => {
     setBusy(true);
     try {
-      const body = { ...f, items: items.filter((i) => i.medicine.trim()).map((i) => ({ id: i.id, medicine: i.medicine, kind: i.kind, dosage: i.dosage, frequency: i.frequency, duration: i.duration, instructions: i.instructions, quantity: i.quantity })) };
+      const body = { ...f, items: items.filter((i) => i.medicine.trim()).map((i) => ({ id: i.id, medicine: i.medicine, kind: i.kind, dosage: i.dosage, frequency: i.frequency, duration: i.duration, instructions: i.instructions, quantity: i.quantity, product_id: i.product_id || null })), package_sessions: packageSessions };
       let saved;
       if (visit) {
         saved = (await api(`/staff/visits/${visit.id}`, { method: 'PUT', body })).visit;
@@ -177,6 +181,28 @@ function Editor({ data, appointmentId, reload }) {
         </div>
 
         <div className="stack gap-16" style={{ position: 'sticky', top: 16 }}>
+          {usable.length > 0 && (
+            <div className="card">
+              <div className="card-title row gap-6"><Layers size={18} />Treatment plans</div>
+              <div className="stack gap-12 mt-12">
+                {usable.map((pk) => {
+                  const on = packageSessions.includes(pk.id);
+                  const already = (visit?.package_sessions || []).some((x) => x.id === pk.id);
+                  const n = already ? (visit.package_sessions.find((x) => x.id === pk.id).number) : pk.sessions_used + 1;
+                  return (
+                    <label key={pk.id} className={`plan-tick ${on ? 'on' : ''}`}>
+                      <input type="checkbox" checked={on} onChange={(e) => { setPackageSessions(e.target.checked ? [...packageSessions, pk.id] : packageSessions.filter((x) => x !== pk.id)); setDirty(true); }} />
+                      <div className="grow">
+                        <div className="small strong">{pk.name}</div>
+                        <div className="tiny muted">{on ? `Session ${n} of ${pk.sessions_total} today` : `${pk.sessions_used} of ${pk.sessions_total} done · tick to use a session`}</div>
+                      </div>
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           <div className="card">
             <div className="card-title row gap-6"><CalendarDays size={18} />Next visit</div>
             <div className="chips mt-12">
@@ -224,37 +250,57 @@ function Editor({ data, appointmentId, reload }) {
   );
 }
 
+const KIND_BY_CATEGORY = { cleansers: 'Face wash', serums: 'Serum', moisturisers: 'Cream', sunscreen: 'Sunscreen', treatments: 'Cream', hair: 'Shampoo', body: 'Lotion' };
+
 function ItemRow({ item, onChange, onRemove }) {
   const [q, setQ] = useState('');
-  const [suggestions, setSuggestions] = useState([]);
+  const [suggestions, setSuggestions] = useState({ medicines: [], products: [] });
   const [focus, setFocus] = useState(false);
   useEffect(() => {
-    if (!focus || q.length < 2) { setSuggestions([]); return; }
-    const t = setTimeout(() => api('/staff/medicines', { query: { q } }).then((r) => setSuggestions(r.medicines.filter((m) => m.medicine.toLowerCase() !== q.toLowerCase()))).catch(() => {}), 200);
+    if (!focus || q.length < 2) { setSuggestions({ medicines: [], products: [] }); return; }
+    const t = setTimeout(() => api('/staff/medicines', { query: { q } }).then((r) => setSuggestions({
+      medicines: r.medicines.filter((m) => m.medicine.toLowerCase() !== q.toLowerCase()).slice(0, 5),
+      products: r.products || [],
+    })).catch(() => {}), 200);
     return () => clearTimeout(t);
   }, [q, focus]);
   const locked = !!item.dispensed;
   const field = (k, placeholder, list) => (
     <input className="input sm" placeholder={placeholder} list={list} value={item[k] || ''} disabled={locked} onChange={(e) => onChange({ [k]: e.target.value })} />
   );
-  const sug = useMemo(() => suggestions.slice(0, 6), [suggestions]);
+  const close = () => setSuggestions({ medicines: [], products: [] });
+  const show = focus && (suggestions.medicines.length > 0 || suggestions.products.length > 0);
   return (
     <div className="rx-row">
       <div className="med" style={{ position: 'relative' }}>
         <input
-          className="input sm" placeholder="Medicine name & strength" value={item.medicine} disabled={locked}
-          onChange={(e) => { onChange({ medicine: e.target.value }); setQ(e.target.value); }}
+          className="input sm" placeholder="Medicine or product" value={item.medicine} disabled={locked}
+          onChange={(e) => { onChange({ medicine: e.target.value, ...(item.product_id ? { product_id: null } : {}) }); setQ(e.target.value); }}
           onFocus={() => setFocus(true)} onBlur={() => setTimeout(() => setFocus(false), 150)}
         />
-        {sug.length > 0 && focus && (
+        {show && (
           <div className="suggest">
-            {sug.map((m) => (
-              <button key={m.medicine} type="button" onMouseDown={() => { onChange({ medicine: m.medicine, kind: m.kind || '', dosage: m.dosage || '', frequency: m.frequency || '', duration: m.duration || '', instructions: m.instructions || '' }); setSuggestions([]); }}>
+            {suggestions.products.length > 0 && <div className="suggest-label">In the shop</div>}
+            {suggestions.products.map((p) => (
+              <button key={p.id} type="button" onMouseDown={() => {
+                onChange({ medicine: `${p.name}${p.size ? ` ${p.size}` : ''}`, product_id: p.id, kind: item.kind || KIND_BY_CATEGORY[p.category] || '', instructions: item.instructions || p.how_to_use || '' });
+                close();
+              }}>
+                <div className="row between"><span className="small strong">{p.name}{p.size ? ` · ${p.size}` : ''}</span><span className="tiny strong" style={{ color: 'var(--brand)' }}>{inr(p.price)}</span></div>
+                <div className="tiny muted">{p.stock > 0 ? `${p.stock} in stock` : 'Out of stock'} · patient can order it online</div>
+              </button>
+            ))}
+            {suggestions.medicines.length > 0 && suggestions.products.length > 0 && <div className="suggest-label">Prescribed before</div>}
+            {suggestions.medicines.map((m) => (
+              <button key={m.medicine} type="button" onMouseDown={() => { onChange({ medicine: m.medicine, product_id: m.product_id || null, kind: m.kind || '', dosage: m.dosage || '', frequency: m.frequency || '', duration: m.duration || '', instructions: m.instructions || '' }); close(); }}>
                 <div className="small strong">{m.medicine}</div>
                 <div className="tiny muted">{[m.kind, m.frequency, m.duration].filter(Boolean).join(' · ')}</div>
               </button>
             ))}
           </div>
+        )}
+        {item.product_id && (
+          <span className="in-shop">In shop{!locked && <button type="button" onClick={() => onChange({ product_id: null })} aria-label="Unlink from shop">×</button>}</span>
         )}
       </div>
       {field('kind', 'Type', 'kinds')}

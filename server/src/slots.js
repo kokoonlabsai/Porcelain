@@ -1,8 +1,8 @@
 const { db, getSettings } = require('./db');
 const { today, addDays, toMinutes, fromMinutes } = require('./util');
 
-/** Appointments in these states hold their slot. */
-const HOLDING = ['booked', 'checked_in', 'completed'];
+/** Appointments in these states hold their slot (including a booking whose deposit is being paid). */
+const HOLDING = ['booked', 'checked_in', 'completed', 'pending_payment'];
 
 function weekdayOf(iso) {
   const [y, m, d] = iso.split('-').map(Number);

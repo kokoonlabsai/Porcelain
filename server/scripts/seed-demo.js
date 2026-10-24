@@ -114,6 +114,29 @@ async function main() {
     })));
   }
 
+  // Treatment package templates, and one sold to Asha with a session used.
+  if (!(await db.packages.findOne({}))) {
+    const now = new Date();
+    const templates = [
+      ['Laser hair reduction — full face, 6 sessions', 6, 18000, 30],
+      ['PRP for hair — 4 sessions', 4, 24000, 30],
+      ['Chemical peel course — 4 sessions', 4, 10000, 21],
+      ['HydraFacial glow plan — 3 sessions', 3, 13500, 30],
+    ].map(([name, sessions, price, interval_days]) => ({ name, sessions, price, interval_days, description: '', concern: 'procedure', active: true, created_at: now, updated_at: now }));
+    await db.packages.insertMany(templates);
+    const prp = templates[1];
+    const ashaVisit = await db.visits.findOne({ patient_id: asha, procedure_done: /PRP/ });
+    await db.patient_packages.insertOne({
+      patient_id: asha, package_id: prp._id, name: prp.name, concern: 'procedure', interval_days: 30,
+      sessions_total: 4, sessions_used: ashaVisit ? 1 : 0, sessions: ashaVisit ? [{ visit_id: ashaVisit._id, date: ashaVisit.date, at: now }] : [],
+      price: 24000, amount_paid: 12000, payment_method: 'upi', notes: null, status: 'active', sold_by: doctor, sold_at: now, updated_at: now,
+    });
+  }
+
+  // Link Asha's prescribed shampoo to the shop product, so her portal offers it online.
+  const shampoo = await db.products.findOne({ slug: 'ketoconazole-anti-dandruff-shampoo' });
+  if (shampoo) await db.visits.updateMany({ patient_id: asha, 'items.medicine': /Ketoconazole/ }, { $set: { 'items.$[i].product_id': shampoo._id } }, { arrayFilters: [{ 'i.medicine': /Ketoconazole/ }] });
+
   console.log('Demo data ready. Admin +91 90000 00001 / admin123 · Doctors 90000 00002, 90000 00004 / doctor123 · Reception 90000 00003 / reception123 · Patient 98111 11111 / patient123');
 }
 

@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { ArrowLeft, ArrowRight, Check, CalendarPlus, MapPin, MessageCircle, Clock, UserRound, Phone, Mail, Sun, Sunset, Moon, CalendarX } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Check, CalendarPlus, MapPin, MessageCircle, Clock, UserRound, Phone, Mail, Sun, Sunset, Moon, CalendarX, Lock, ShieldCheck } from 'lucide-react';
 import { api } from '../lib/api';
-import { useApp } from '../lib/store';
+import { loadRazorpay, payWithRazorpay } from '../lib/razorpay';
+import { inr } from '../lib/cart';
+import { useApp, useLoad } from '../lib/store';
 import { CONCERNS, concernLabel, fmtDateLong, fmtTime, parseISO, downloadIcs, displayPhone } from '../lib/format';
 import { Button, ConcernIcon, Field, Skeleton, Empty, fieldErrors } from '../components/ui';
 
@@ -30,6 +32,14 @@ export default function Book({ inPortal = false }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [done, setDone] = useState(null);
+  const config = useLoad(() => api('/shop/config'), []);
+  // Same rule as the server: procedures and weekend slots booked online need a deposit.
+  const deposit = useMemo(() => {
+    const amount = Number(settings.deposit_amount) || 0;
+    if (!config.data?.online_payment || !amount || !date) return 0;
+    const weekend = [0, 6].includes(parseISO(date).getDay());
+    return (concern === 'procedure' && settings.deposit_procedures === '1') || (weekend && settings.deposit_weekends === '1') ? amount : 0;
+  }, [settings, config.data, date, concern]);
 
   useEffect(() => {
     api('/slots/days').then(({ days }) => {
@@ -56,7 +66,19 @@ export default function Book({ inPortal = false }) {
     try {
       const body = { concern, description, date, start_time: time.start, email: form.email };
       if (!patient) Object.assign(body, { name: form.name, phone: form.phone });
+      if (deposit) await loadRazorpay();
       const res = await api('/appointments', { method: 'POST', body });
+      if (res.razorpay) {
+        const result = await payWithRazorpay(res.razorpay);
+        if (!result) {
+          // Closed without paying: free the slot so they (or someone else) can take it.
+          api(`/appointments/${res.appointment.id}/deposit/abandon`, { method: 'POST', body: { razorpay_order_id: res.razorpay.order_id } }).catch(() => {});
+          setError(`The ${inr(res.appointment.deposit.amount)} deposit wasn’t paid, so the slot wasn’t booked. You can try again.`);
+          return;
+        }
+        const v = await api(`/appointments/${res.appointment.id}/deposit/verify`, { method: 'POST', body: result });
+        res.appointment = v.appointment;
+      }
       setDone(res);
       setStep(3);
       window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -164,10 +186,16 @@ export default function Book({ inPortal = false }) {
               </div>
             )}
           </div>
+          {deposit > 0 && time && (
+            <div className="deposit-note mt-24">
+              <ShieldCheck size={20} />
+              <div><b>A {inr(deposit)} deposit secures this slot.</b> It’s adjusted against your bill, and refunded if you cancel at least {settings.deposit_refund_hours || 24} hours ahead.</div>
+            </div>
+          )}
           <div className="row between mt-32">
             <Button className="ghost" onClick={() => setStep(0)}><ArrowLeft size={18} />Back</Button>
             <Button className="primary lg" disabled={!time} loading={busy && !!patient} onClick={goDetails}>
-              {patient ? 'Confirm booking' : 'Continue'} <ArrowRight size={18} />
+              {patient ? (deposit ? <><Lock size={16} />Pay {inr(deposit)} & book</> : 'Confirm booking') : 'Continue'} {!(patient && deposit) && <ArrowRight size={18} />}
             </Button>
           </div>
           {patient && (
@@ -195,7 +223,7 @@ export default function Book({ inPortal = false }) {
           </div>
           <div className="row between mt-32">
             <Button type="button" className="ghost" onClick={() => setStep(1)}><ArrowLeft size={18} />Back</Button>
-            <Button className="primary lg" loading={busy}>Confirm booking <Check size={18} /></Button>
+            <Button className="primary lg" loading={busy}>{deposit ? <><Lock size={16} />Pay {inr(deposit)} & book</> : <>Confirm booking <Check size={18} /></>}</Button>
           </div>
         </form>
       )}
@@ -240,6 +268,9 @@ function Success({ res, settings, onLogin, inPortal, nav }) {
       <div className="card flat mt-24" style={{ textAlign: 'left', background: 'var(--surface-2)' }}>
         <div className="summary-line"><Clock size={18} color="var(--brand)" /><div><div className="strong">{fmtDateLong(a.date)}</div><div className="small muted">{fmtTime(a.start_time)} – {fmtTime(a.end_time)}</div></div></div>
         <div className="summary-line"><ConcernIcon concern={a.concern} size={16} box={30} /><div className="strong">{concernLabel(a.concern)}</div></div>
+        {a.deposit?.status === 'paid' && (
+          <div className="summary-line"><Lock size={18} color="var(--green)" /><div><div className="strong">Deposit paid · {inr(a.deposit.amount)}</div><div className="small muted">Adjusted against your bill at the visit</div></div></div>
+        )}
         {settings.address && <div className="summary-line"><MapPin size={18} color="var(--brand)" /><div className="small">{settings.address}{settings.maps_url && <> · <a className="link" href={settings.maps_url} target="_blank" rel="noreferrer">Directions</a></>}</div></div>}
       </div>
 

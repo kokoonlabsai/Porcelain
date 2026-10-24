@@ -7,7 +7,9 @@ const { createAppointment, CONCERNS } = require('../appointments');
 const { slotsFor } = require('../slots');
 const { latestVisits } = require('../jobs');
 const { visitDetails, ATTACHMENT_FIELDS } = require('../records');
+const { applyPackageSessions, packagesForPatient } = require('./packages');
 const mail = require('../mail');
+const deposits = require('../deposits');
 const {
   HttpError, wrap, requireStaff, requireAuth, today, addDays, isISODate, isTime, str, isEmail, tempPassword, publicUser,
 } = require('../util');
@@ -107,7 +109,19 @@ router.patch(
     const set = {};
     if (status !== undefined) {
       if (!STATUSES.includes(status)) throw new HttpError(422, 'Unknown status');
+      if (a.status === 'pending_payment') throw new HttpError(409, 'This booking is waiting for its deposit');
       set.status = status;
+      // Deposits: the clinic cancelling refunds it (unless told not to); a no-show keeps it; a visit uses it.
+      if (deposits.depositPaid(a)) {
+        if (status === 'cancelled' && req.body.refund_deposit !== false) {
+          try {
+            await deposits.refundDeposit(a);
+          } catch (e) {
+            throw new HttpError(502, `The deposit refund didn’t go through (${e.message}). Nothing was changed — try again, or refund from the Razorpay dashboard.`);
+          }
+        } else if (status === 'cancelled' || status === 'no_show') set['deposit.status'] = 'forfeited';
+        else if (status === 'completed') set['deposit.status'] = 'adjusted';
+      }
     }
     if (date !== undefined || start_time !== undefined) {
       if (!isISODate(date) || !isTime(start_time)) throw new HttpError(422, 'Pick a date and time');
@@ -230,6 +244,7 @@ router.get(
       appointments: out(appointments),
       visits: await Promise.all(visits.map((v) => visitDetails(v, { showPrivate }))),
       photos: out(photos),
+      packages: await packagesForPatient(p._id),
     });
   })
 );
@@ -269,12 +284,12 @@ const ITEM_LIMITS = { medicine: 200, kind: 40, dosage: 100, frequency: 100, dura
 function cleanItems(items) {
   if (!Array.isArray(items)) return [];
   return items
-    .map((i) => ({ id: oid(i?.id), ...Object.fromEntries(ITEM_FIELDS.map((k) => [k, str(i?.[k], ITEM_LIMITS[k])])) }))
+    .map((i) => ({ id: oid(i?.id), product_id: oid(String(i?.product_id || '')), ...Object.fromEntries(ITEM_FIELDS.map((k) => [k, str(i?.[k], ITEM_LIMITS[k])])) }))
     .filter((i) => i.medicine);
 }
 
 const newItem = (i) => ({
-  _id: new ObjectId(), ...Object.fromEntries(ITEM_FIELDS.map((k) => [k, i[k]])), dispensed: false, dispensed_at: null, dispensed_by: null,
+  _id: new ObjectId(), product_id: i.product_id || null, ...Object.fromEntries(ITEM_FIELDS.map((k) => [k, i[k]])), dispensed: false, dispensed_at: null, dispensed_by: null,
 });
 
 function visitFields(body) {
@@ -321,7 +336,12 @@ router.post(
       items: cleanItems(b.items).map(newItem), follow_up_reminded: false, created_at: now, updated_at: now,
     };
     await db.visits.insertOne(visit);
-    if (appointmentId) await db.appointments.updateOne({ _id: appointmentId }, { $set: { status: 'completed' } });
+    if (appointmentId) {
+      await db.appointments.updateOne({ _id: appointmentId }, { $set: { status: 'completed' } });
+      // The deposit counts towards today's bill.
+      await db.appointments.updateOne({ _id: appointmentId, 'deposit.status': 'paid' }, { $set: { 'deposit.status': 'adjusted' } });
+    }
+    await applyPackageSessions(visit, b.package_sessions);
     if (b.send_email && patient.email) await mail.visitSummary(patient, visit, visit.items);
     res.status(201).json({ visit: await visitDetails(visit, { showPrivate: true }) });
   })
@@ -350,14 +370,16 @@ router.put(
       const existing = v.items || [];
       const items = sent.map((i) => {
         const own = i.id && existing.find((e) => e._id.equals(i.id));
-        return own ? { ...own, ...Object.fromEntries(ITEM_FIELDS.map((k) => [k, i[k]])) } : newItem(i);
+        return own ? { ...own, product_id: i.product_id || null, ...Object.fromEntries(ITEM_FIELDS.map((k) => [k, i[k]])) } : newItem(i);
       });
       // Handed-over medicines that weren't in the list stay on the record.
       for (const e of existing) if (e.dispensed && !items.some((i) => i._id.equals(e._id))) items.push(e);
       set.items = items;
     }
     await db.visits.updateOne({ _id: v._id }, { $set: set });
-    res.json({ visit: await visitDetails(await db.visits.findOne({ _id: v._id }), { showPrivate: true }) });
+    const saved = await db.visits.findOne({ _id: v._id });
+    await applyPackageSessions(saved, req.body?.package_sessions);
+    res.json({ visit: await visitDetails(saved, { showPrivate: true }) });
   })
 );
 
@@ -398,8 +420,12 @@ router.get(
       { $sort: { uses: -1 } },
       { $limit: 12 },
     ]).toArray();
+    const products = q.length >= 2
+      ? await db.products.find({ active: true, $or: [{ name: contains(q) }, { brand: contains(q) }] }, { projection: { name: 1, brand: 1, size: 1, price: 1, stock: 1, category: 1, how_to_use: 1 } }).limit(6).toArray()
+      : [];
     res.json({
-      medicines: rows.map(({ item, uses }) => ({ ...Object.fromEntries(ITEM_FIELDS.filter((k) => k !== 'quantity').map((k) => [k, item[k]])), uses })),
+      medicines: rows.map(({ item, uses }) => ({ ...Object.fromEntries(ITEM_FIELDS.filter((k) => k !== 'quantity').map((k) => [k, item[k]])), product_id: item.product_id ? String(item.product_id) : null, uses })),
+      products: out(products),
     });
   })
 );

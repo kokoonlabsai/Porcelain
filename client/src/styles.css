@@ -962,3 +962,25 @@ button.caps-link { background: none; border: 0; padding: 0; cursor: pointer; }
   .shop-bar .chips::-webkit-scrollbar { display: none; }
 }
 .paid-note { display: inline-flex; align-items: center; gap: 8px; padding: 10px 16px; background: var(--green-soft); color: var(--green); font-weight: 600; }
+.deposit-note { display: flex; gap: 12px; align-items: flex-start; padding: 16px 18px; background: var(--brand-soft); color: var(--ink-2); font-size: 15px; line-height: 1.55; }
+.deposit-note > svg { color: var(--brand); flex-shrink: 0; margin-top: 2px; }
+
+.rx-shop { display: flex; align-items: center; gap: 12px; margin-top: 12px; padding: 10px 12px; background: var(--surface-2); border: 1px solid var(--line); flex-wrap: wrap; }
+.rx-shop .add-btn { height: 34px; }
+.plan-bar { display: flex; gap: 4px; }
+.plan-bar span { flex: 1; height: 8px; background: var(--bg-2); }
+.plan-bar span.on { background: var(--brand); }
+.appt-deposit { margin-top: 4px; display: inline-block; font-size: 12.5px; font-weight: 600; padding: 2px 8px; background: var(--green-soft); color: var(--green); }
+.appt-deposit.refunded, .appt-deposit.pending { background: var(--bg-2); color: var(--muted); }
+.appt-deposit.forfeited { background: var(--sun-soft); color: #87590f; }
+
+.suggest-label { padding: 8px 12px 4px; font-size: 11px; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase; color: var(--brass-text); }
+.in-shop { position: absolute; right: 8px; top: 50%; transform: translateY(-50%); display: inline-flex; align-items: center; gap: 4px; padding: 1px 7px; font-size: 11px; font-weight: 600; background: var(--brand-soft); color: var(--brand); }
+.in-shop button { border: 0; background: none; color: inherit; cursor: pointer; padding: 0 0 0 2px; font-size: 14px; line-height: 1; }
+.rx-row .med .input { padding-right: 76px; }
+.plan-tick { display: flex; gap: 12px; align-items: flex-start; padding: 12px; border: 1px solid var(--line-strong); cursor: pointer; }
+.plan-tick.on { border-color: var(--brand); background: var(--brand-soft); }
+.plan-tick input { width: 18px; height: 18px; accent-color: var(--brand); margin-top: 2px; }
+.gap-12 { gap: 12px; }
+.rx-row .med .suggest { min-width: 360px; right: auto; }
+@media (max-width: 620px) { .rx-row .med .suggest { min-width: 0; right: 0; } }

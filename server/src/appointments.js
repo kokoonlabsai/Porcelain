@@ -2,6 +2,8 @@ const { db, newUser } = require('./db');
 const { normalizePhone } = require('./phone');
 const { slotsFor, HOLDING } = require('./slots');
 const { HttpError, str, isEmail, isISODate, isTime } = require('./util');
+const razorpay = require('./razorpay');
+const { getSettings } = require('./db');
 
 const CONCERNS = ['hair', 'skin', 'wellness', 'procedure', 'other'];
 
@@ -70,8 +72,12 @@ async function createAppointment(input, actor) {
   if (actor && actor.role === 'patient' && email && email !== actor.email) {
     await db.users.updateOne({ _id: actor._id }, { $set: { email } });
   }
-  const clash = await db.appointments.findOne({ patient_id: patient._id, date, status: { $in: ['booked', 'checked_in'] } });
+  const clash = await db.appointments.findOne({ patient_id: patient._id, date, status: { $in: ['booked', 'checked_in', 'pending_payment'] } });
   if (clash) throw new HttpError(409, 'You already have an appointment that day. Cancel it first to pick a new time.');
+
+  // Procedures and weekend slots booked online are secured with a deposit (see deposits.js).
+  const { depositFor } = require('./deposits');
+  const deposit = await depositFor({ date, concern }, actor);
 
   const appointment = {
     patient_id: patient._id,
@@ -80,7 +86,8 @@ async function createAppointment(input, actor) {
     end_time: slot.end,
     concern,
     description,
-    status: forStaff && input.check_in ? 'checked_in' : 'booked',
+    status: deposit ? 'pending_payment' : forStaff && input.check_in ? 'checked_in' : 'booked',
+    deposit: deposit ? { amount: deposit, status: 'pending' } : null,
     source: forStaff ? (input.source === 'phone' ? 'phone' : 'walk_in') : 'online',
     reminder_sent: false,
     created_at: new Date(),
@@ -94,7 +101,29 @@ async function createAppointment(input, actor) {
     throw new HttpError(409, 'Someone just took that slot. Please pick another one.');
   }
 
-  return { appointment, patient: await db.users.findOne({ _id: patient._id }) };
+  const fresh = await db.users.findOne({ _id: patient._id });
+  if (!deposit) return { appointment, patient: fresh };
+
+  // A Razorpay order for the deposit, in paise. The browser opens Razorpay's checkout with it.
+  let rzp;
+  try {
+    rzp = await razorpay.createOrder({ amount: deposit * 100, receipt: `APT-${String(appointment._id).slice(-10)}`, notes: { appointment_id: String(appointment._id), kind: 'booking_deposit' } });
+  } catch (e) {
+    await db.appointments.deleteOne({ _id: appointment._id });
+    console.error('[razorpay] deposit order failed:', e.message);
+    throw new HttpError(502, 'We couldn’t start the deposit payment. Please try again, or call the clinic to book.');
+  }
+  appointment.deposit.razorpay_order_id = rzp.id;
+  await db.appointments.updateOne({ _id: appointment._id }, { $set: { 'deposit.razorpay_order_id': rzp.id } });
+  const s = await getSettings();
+  return {
+    appointment,
+    patient: fresh,
+    razorpay: {
+      key: razorpay.keyId(), order_id: rzp.id, amount: rzp.amount, currency: rzp.currency,
+      name: s.clinic_name, description: 'Booking deposit — adjusted against your bill', prefill: { name: fresh.name, contact: fresh.phone, email: fresh.email || '' },
+    },
+  };
 }
 
 module.exports = { createAppointment, findOrCreatePatient, CONCERNS };

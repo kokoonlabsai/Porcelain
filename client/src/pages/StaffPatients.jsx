@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
-import { Search, UserPlus, KeyRound, Stethoscope, CalendarPlus, Pencil, Copy, MessageCircle, Pill, Images, Phone, Mail, Printer, EyeOff, Upload } from 'lucide-react';
+import { Layers, Plus, Search, UserPlus, KeyRound, Stethoscope, CalendarPlus, Pencil, Copy, MessageCircle, Pill, Images, Phone, Mail, Printer, EyeOff, Upload } from 'lucide-react';
 import { api } from '../lib/api';
 import { useApp, useLoad } from '../lib/store';
 import { fmtDate, fmtDateLong, fmtTime, displayPhone, age, concernLabel, whatsappLink, firstName, compressImage } from '../lib/format';
 import { Avatar, Badge, Button, Empty, ErrorBox, Field, Modal, PageSkeleton, Skeleton, StatusBadge, PhotoGrid, ConcernIcon, fieldErrors } from '../components/ui';
+import { inr } from '../lib/cart';
 import { BookingModal } from './StaffToday';
 import { Medicines } from './Portal';
 
@@ -219,6 +220,7 @@ export function StaffPatient() {
               </div>
             )}
           </div>
+          <PatientPackages patientId={p.id} packages={data.packages || []} onChange={reload} />
           <PatientPhotos patientId={p.id} photos={photos} onChange={reload} canEdit={clinician} />
         </div>
       </div>
@@ -274,5 +276,134 @@ export function PatientPhotos({ patientId, visitId, photos, onChange, canEdit, t
         ) : <p className="small muted">No photos yet.{canEdit ? ' On a phone, “Add” opens the camera.' : ''}</p>}
       </div>
     </div>
+  );
+}
+
+const PAY_METHODS = [['cash', 'Cash'], ['upi', 'UPI'], ['card', 'Card'], ['online', 'Online'], ['other', 'Other']];
+
+/** Treatment packages on the patient page: progress, payments, and selling a new one. */
+function PatientPackages({ patientId, packages, onChange }) {
+  const { toast } = useApp();
+  const [selling, setSelling] = useState(false);
+  const [paying, setPaying] = useState(null);
+  const shown = packages.filter((pk) => pk.status !== 'cancelled');
+  const cancel = async (pk) => {
+    if (!window.confirm(`Cancel “${pk.name}”? Used sessions stay on the record.`)) return;
+    try { await api(`/staff/packages/${pk.id}`, { method: 'PATCH', body: { status: 'cancelled' } }); onChange(); } catch (e) { toast(e.message, 'err'); }
+  };
+  return (
+    <div className="card">
+      <div className="row between">
+        <div className="card-title row gap-6"><Layers size={18} />Treatment packages</div>
+        <Button className="sm" onClick={() => setSelling(true)}><Plus size={15} />Sell</Button>
+      </div>
+      {!shown.length ? <p className="small muted mt-8">No packages yet.</p> : (
+        <div className="stack gap-16 mt-12">
+          {shown.map((pk) => {
+            const due = pk.price - (pk.amount_paid || 0);
+            return (
+              <div key={pk.id}>
+                <div className="row between top">
+                  <div className="small strong">{pk.name}</div>
+                  {pk.status === 'completed' ? <Badge tone="green">Done</Badge> : <span className="small strong" style={{ color: 'var(--brand)' }}>{pk.sessions_used}/{pk.sessions_total}</span>}
+                </div>
+                <div className="plan-bar mt-8">{Array.from({ length: pk.sessions_total }).map((_, n) => <span key={n} className={n < pk.sessions_used ? 'on' : ''} />)}</div>
+                <div className="row between mt-8 tiny">
+                  <span className={due > 0 ? '' : 'muted'} style={due > 0 ? { color: '#87590f', fontWeight: 600 } : undefined}>
+                    {due > 0 ? `${inr(due)} due of ${inr(pk.price)}` : `Paid ${inr(pk.price)}`}
+                  </span>
+                  <span className="row gap-6">
+                    {due > 0 && <button className="link tiny" onClick={() => setPaying(pk)}>Record payment</button>}
+                    {pk.status === 'active' && <button className="link tiny" style={{ color: 'var(--muted)' }} onClick={() => cancel(pk)}>Cancel</button>}
+                  </span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+      {selling && <SellPackage patientId={patientId} onClose={() => setSelling(false)} onDone={() => { setSelling(false); onChange(); toast('Package added'); }} />}
+      {paying && <RecordPayment pk={paying} onClose={() => setPaying(null)} onDone={() => { setPaying(null); onChange(); toast('Payment recorded'); }} />}
+    </div>
+  );
+}
+
+function SellPackage({ patientId, onClose, onDone }) {
+  const { data } = useLoad(() => api('/staff/packages/templates'), []);
+  const [f, setF] = useState({ package_id: '', price: '', sessions: '', amount_paid: '', payment_method: 'upi', notes: '' });
+  const [errors, setErrors] = useState({});
+  const [busy, setBusy] = useState(false);
+  const t = data?.packages.find((x) => x.id === f.package_id);
+  const pick = (id) => {
+    const x = data.packages.find((y) => y.id === id);
+    setF({ ...f, package_id: id, price: x ? String(x.price) : '', sessions: x ? String(x.sessions) : '', amount_paid: x ? String(x.price) : '' });
+  };
+  const submit = async (e) => {
+    e.preventDefault();
+    setBusy(true);
+    setErrors({});
+    try {
+      await api(`/staff/packages/patient/${patientId}`, { method: 'POST', body: f });
+      onDone();
+    } catch (ex) { setErrors(fieldErrors(ex)); } finally { setBusy(false); }
+  };
+  return (
+    <Modal title="Sell a package" onClose={onClose}>
+      {!data ? <Skeleton h={200} /> : !data.packages.length ? (
+        <Empty icon={Layers} title="No packages set up">An admin can add them under Admin → Packages.</Empty>
+      ) : (
+        <form className="stack gap-16" onSubmit={submit}>
+          <Field label="Package" error={errors.package_id}>
+            <select className="input" value={f.package_id} onChange={(e) => pick(e.target.value)} required>
+              <option value="">Choose…</option>
+              {data.packages.map((x) => <option key={x.id} value={x.id}>{x.name}{/session/i.test(x.name) ? '' : ` — ${x.sessions} sessions`} · {inr(x.price)}</option>)}
+            </select>
+          </Field>
+          {t && (
+            <>
+              <div className="grid g-2">
+                <Field label="Price (₹)" hint="Change for a special offer" error={errors.price}><input className="input" inputMode="numeric" value={f.price} onChange={(e) => setF({ ...f, price: e.target.value })} /></Field>
+                <Field label="Sessions" error={errors.sessions}><input className="input" inputMode="numeric" value={f.sessions} onChange={(e) => setF({ ...f, sessions: e.target.value })} /></Field>
+              </div>
+              <div className="grid g-2">
+                <Field label="Paid today (₹)" error={errors.amount_paid}><input className="input" inputMode="numeric" value={f.amount_paid} onChange={(e) => setF({ ...f, amount_paid: e.target.value })} /></Field>
+                <Field label="Paid by">
+                  <select className="input" value={f.payment_method} onChange={(e) => setF({ ...f, payment_method: e.target.value })}>{PAY_METHODS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select>
+                </Field>
+              </div>
+              <Field label="Note (optional)"><input className="input" value={f.notes} onChange={(e) => setF({ ...f, notes: e.target.value })} /></Field>
+            </>
+          )}
+          <div className="row" style={{ justifyContent: 'flex-end' }}><Button type="button" className="ghost" onClick={onClose}>Cancel</Button><Button className="primary" loading={busy} disabled={!t}>Add package</Button></div>
+        </form>
+      )}
+    </Modal>
+  );
+}
+
+function RecordPayment({ pk, onClose, onDone }) {
+  const [amount, setAmount] = useState(String(pk.price));
+  const [method, setMethod] = useState(pk.payment_method || 'upi');
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+  const submit = async (e) => {
+    e.preventDefault();
+    setBusy(true);
+    try {
+      await api(`/staff/packages/${pk.id}`, { method: 'PATCH', body: { amount_paid: amount, payment_method: method } });
+      onDone();
+    } catch (ex) { setError(ex.message); } finally { setBusy(false); }
+  };
+  return (
+    <Modal title="Record payment" onClose={onClose}>
+      <form className="stack gap-16" onSubmit={submit}>
+        <p className="muted small">{pk.name} · {inr(pk.amount_paid || 0)} paid of {inr(pk.price)}</p>
+        <div className="grid g-2">
+          <Field label="Total paid so far (₹)" error={error}><input className="input" inputMode="numeric" value={amount} onChange={(e) => setAmount(e.target.value)} /></Field>
+          <Field label="Paid by"><select className="input" value={method} onChange={(e) => setMethod(e.target.value)}>{PAY_METHODS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></Field>
+        </div>
+        <div className="row" style={{ justifyContent: 'flex-end' }}><Button type="button" className="ghost" onClick={onClose}>Cancel</Button><Button className="primary" loading={busy}>Save</Button></div>
+      </form>
+    </Modal>
   );
 }

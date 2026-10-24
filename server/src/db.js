@@ -21,6 +21,8 @@ const db = {
   settings: col('settings'),
   products: col('products'),
   orders: col('orders'),
+  packages: col('packages'),
+  patient_packages: col('patient_packages'),
 };
 
 /** Turns a URL/body id into an ObjectId, or null when it isn't one. */
@@ -73,6 +75,11 @@ const DEFAULT_SETTINGS = {
   instagram: 'https://www.instagram.com/porcelainskinclinic/',
   booking_days_ahead: '30',
   min_notice_minutes: '60',
+  // Booking deposit (₹) for online bookings of procedures and/or weekend slots. Needs Razorpay.
+  deposit_amount: '1000',
+  deposit_procedures: '1',
+  deposit_weekends: '1',
+  deposit_refund_hours: '24',
   shop_delivery: '1',
   shop_delivery_fee: '99',
   shop_free_delivery_over: '1499',
@@ -108,6 +115,10 @@ async function setup() {
     db.products.createIndex({ slug: 1 }, { unique: true }),
     db.products.createIndex({ active: 1, category: 1 }),
     db.orders.createIndex({ number: 1 }, { unique: true }),
+    db.appointments.createIndex({ 'deposit.razorpay_order_id': 1 }, { sparse: true }),
+    db.appointments.createIndex({ status: 1, created_at: 1 }),
+    db.patient_packages.createIndex({ patient_id: 1, status: 1 }),
+    db.patient_packages.createIndex({ 'sessions.visit_id': 1 }),
     db.orders.createIndex({ status: 1, created_at: -1 }),
     db.orders.createIndex({ patient_id: 1, created_at: -1 }),
     db.orders.createIndex({ 'customer.phone': 1 }),

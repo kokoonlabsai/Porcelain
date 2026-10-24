@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ShoppingBag, Package, Plus, Trash2, Copy, Save, CalendarOff, KeyRound, UserPlus, Pencil, Eye, Newspaper, CalendarClock, UserCog, Settings, LogOut } from 'lucide-react';
+import { Layers, ShoppingBag, Package, Plus, Trash2, Copy, Save, CalendarOff, KeyRound, UserPlus, Pencil, Eye, Newspaper, CalendarClock, UserCog, Settings, LogOut } from 'lucide-react';
 import { api } from '../lib/api';
 import { useApp, useLoad } from '../lib/store';
 import { WEEKDAYS, fmtDate, fmtTime, displayPhone, ARTICLE_CATS, catLabel, todayISO } from '../lib/format';
@@ -389,6 +389,10 @@ const SETTINGS_FIELDS = [
   ['email', 'Clinic email'],
   ['address', 'Address'],
   ['maps_url', 'Google Maps link'],
+  ['deposit_amount', 'Booking deposit (₹)', 'Taken through Razorpay for online bookings below. 0 = no deposits'],
+  ['deposit_procedures', 'Deposit for procedures', '1 = yes, 0 = no'],
+  ['deposit_weekends', 'Deposit for weekend slots', '1 = yes, 0 = no'],
+  ['deposit_refund_hours', 'Refund the deposit if cancelled at least … hours ahead'],
   ['shop_delivery', 'Shop delivery', '1 = offer delivery, 0 = pick up at the clinic only'],
   ['shop_delivery_fee', 'Delivery fee (₹)'],
   ['shop_free_delivery_over', 'Free delivery on orders over (₹)', '0 = never free'],
@@ -422,7 +426,7 @@ export function ClinicSettings() {
         {SETTINGS_FIELDS.map(([k, label, hint]) => (
           <Field key={k} label={label} hint={hint}>
             {['address', 'doctor_bio', 'doctor2_bio', 'highlights', 'doctor_awards', 'doctor2_awards', 'founders_quote'].includes(k) ? <textarea className="input" rows={['highlights', 'doctor_awards', 'doctor2_awards', 'founders_quote'].includes(k) ? 4 : 2} value={f[k]} onChange={(e) => setF({ ...f, [k]: e.target.value })} />
-              : <input className="input" value={f[k]} onChange={(e) => setF({ ...f, [k]: e.target.value })} inputMode={['booking_days_ahead', 'min_notice_minutes', 'shop_delivery_fee', 'shop_free_delivery_over', 'shop_delivery'].includes(k) ? 'numeric' : undefined} />}
+              : <input className="input" value={f[k]} onChange={(e) => setF({ ...f, [k]: e.target.value })} inputMode={['booking_days_ahead', 'min_notice_minutes', 'shop_delivery_fee', 'shop_free_delivery_over', 'shop_delivery', 'deposit_amount', 'deposit_procedures', 'deposit_weekends', 'deposit_refund_hours'].includes(k) ? 'numeric' : undefined} />}
           </Field>
         ))}
         <div><Button className="primary" loading={busy}>Save</Button></div>
@@ -439,6 +443,7 @@ export function More() {
     ['/staff/staff', UserCog, 'Staff accounts'],
     ['/staff/orders', ShoppingBag, 'Shop orders'],
     ['/staff/products', Package, 'Products'],
+    ['/staff/packages', Layers, 'Treatment packages'],
     ['/staff/articles', Newspaper, 'Learn articles'],
     ['/staff/settings', Settings, 'Clinic details'],
   ];
@@ -452,5 +457,72 @@ export function More() {
         </div>
       </div>
     </div>
+  );
+}
+
+// ---------- Treatment packages (templates) ----------
+
+export function PackagesAdmin() {
+  const { data, error, loading, reload } = useLoad(() => api('/admin/packages'), []);
+  const [editing, setEditing] = useState(null);
+  if (error) return <div className="page"><ErrorBox error={error} onRetry={reload} /></div>;
+  if (loading) return <div className="page"><PageSkeleton /></div>;
+  return (
+    <div className="page fade-in">
+      <div className="page-head">
+        <div><div className="eyebrow">Admin</div><h1 className="mt-4">Treatment packages</h1><p className="muted small mt-4">Courses of sessions sold as one. Staff sell them from a patient’s page; each visit can use a session.</p></div>
+        <Button className="primary" onClick={() => setEditing({})}><Plus size={17} />New package</Button>
+      </div>
+      <div className="card" style={{ padding: 8 }}>
+        {!data.packages.length ? <Empty icon={Layers} title="No packages yet" action={<Button className="primary" onClick={() => setEditing({})}>Create one</Button>}>For example “Laser hair reduction — 6 sessions”.</Empty> : (
+          <div className="list">
+            {data.packages.map((pk) => (
+              <div key={pk.id} className="list-item click" onClick={() => setEditing(pk)} style={{ opacity: pk.active ? 1 : 0.5 }}>
+                <div className="grow">
+                  <div className="strong">{pk.name}</div>
+                  <div className="small muted">{pk.sessions} sessions{pk.interval_days ? ` · every ${pk.interval_days} days` : ''}</div>
+                </div>
+                {!pk.active && <Badge tone="grey">Not for sale</Badge>}
+                <span className="strong">₹{pk.price.toLocaleString('en-IN')}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+      {editing && <PackageEditor pk={editing.id ? editing : null} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); reload(); }} />}
+    </div>
+  );
+}
+
+function PackageEditor({ pk, onClose, onSaved }) {
+  const { toast } = useApp();
+  const [f, setF] = useState({ name: pk?.name || '', sessions: pk?.sessions ?? 6, price: pk?.price ?? '', interval_days: pk?.interval_days ?? '', description: pk?.description || '', concern: pk?.concern || 'procedure', active: pk?.active ?? true });
+  const [errors, setErrors] = useState({});
+  const [busy, setBusy] = useState(false);
+  const save = async (e) => {
+    e.preventDefault();
+    setBusy(true);
+    setErrors({});
+    try {
+      await api(pk ? `/admin/packages/${pk.id}` : '/admin/packages', { method: pk ? 'PUT' : 'POST', body: f });
+      toast('Package saved');
+      onSaved();
+    } catch (ex) { setErrors(fieldErrors(ex)); } finally { setBusy(false); }
+  };
+  const per = Number(f.price) && Number(f.sessions) ? Math.round(Number(f.price) / Number(f.sessions)) : 0;
+  return (
+    <Modal title={pk ? 'Edit package' : 'New package'} onClose={onClose}>
+      <form className="stack gap-16" onSubmit={save}>
+        <Field label="Name" error={errors.name}><input className="input" value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} placeholder="Laser hair reduction — full face" required autoFocus /></Field>
+        <div className="grid g-3">
+          <Field label="Sessions" error={errors.sessions}><input className="input" inputMode="numeric" value={f.sessions} onChange={(e) => setF({ ...f, sessions: e.target.value })} /></Field>
+          <Field label="Price (₹)" hint={per ? `₹${per.toLocaleString('en-IN')} a session` : undefined} error={errors.price}><input className="input" inputMode="numeric" value={f.price} onChange={(e) => setF({ ...f, price: e.target.value })} /></Field>
+          <Field label="Every (days)" hint="Optional gap between sessions"><input className="input" inputMode="numeric" value={f.interval_days} onChange={(e) => setF({ ...f, interval_days: e.target.value })} /></Field>
+        </div>
+        <Field label="Description (optional)"><textarea className="input" rows={2} value={f.description} onChange={(e) => setF({ ...f, description: e.target.value })} /></Field>
+        <label className="check"><input type="checkbox" checked={f.active} onChange={(e) => setF({ ...f, active: e.target.checked })} />Available to sell</label>
+        <div className="row" style={{ justifyContent: 'flex-end' }}><Button type="button" className="ghost" onClick={onClose}>Cancel</Button><Button className="primary" loading={busy}>Save</Button></div>
+      </form>
+    </Modal>
   );
 }

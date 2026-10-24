@@ -17,7 +17,7 @@ import { StaffPatients, StaffPatient } from './pages/StaffPatients';
 import VisitEditor from './pages/VisitEditor';
 import Pharmacy from './pages/Pharmacy';
 import PrintVisit from './pages/PrintVisit';
-import { Schedule, StaffAccounts, ArticlesAdmin, ClinicSettings, More } from './pages/Admin';
+import { Schedule, StaffAccounts, ArticlesAdmin, ClinicSettings, More, PackagesAdmin } from './pages/Admin';
 import { ShopList, ProductPage, Checkout } from './pages/Shop';
 import { ShopOrders, ProductsAdmin, PortalOrders } from './pages/ShopAdmin';
 
@@ -86,6 +86,7 @@ function App() {
           <Route path="pharmacy" element={<Pharmacy />} />
           <Route path="orders" element={<ShopOrders />} />
           <Route path="products" element={<Guard roles={['admin']}><ProductsAdmin /></Guard>} />
+          <Route path="packages" element={<Guard roles={['admin']}><PackagesAdmin /></Guard>} />
           <Route path="schedule" element={<Guard roles={['admin']}><Schedule /></Guard>} />
           <Route path="staff" element={<Guard roles={['admin']}><StaffAccounts /></Guard>} />
           <Route path="articles" element={<Guard roles={['admin']}><ArticlesAdmin /></Guard>} />

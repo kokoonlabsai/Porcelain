@@ -270,6 +270,11 @@ webhook.post(
     if (['payment.captured', 'payment.authorized', 'order.paid'].includes(event.event) && payment?.order_id) {
       const o = await db.orders.findOne({ razorpay_order_id: payment.order_id });
       if (o) await markPaid(o, payment.id, 'webhook');
+      else {
+        // Not a shop order: perhaps a booking deposit.
+        const a = await db.appointments.findOne({ 'deposit.razorpay_order_id': payment.order_id });
+        if (a) await require('../deposits').markDepositPaid(a, payment.id, 'webhook');
+      }
     }
     res.json({ ok: true });
   })
@@ -425,4 +430,4 @@ admin.delete(
   })
 );
 
-module.exports = { pub, mine, staff, admin, webhook, expireUnpaidOrders, CATEGORIES };
+module.exports = { pub, mine, staff, admin, webhook, expireUnpaidOrders, productOut, CATEGORIES };

@@ -105,6 +105,8 @@ test('phone numbers normalise to one form', () => {
 test('admin sets the weekly schedule with several windows per day', async () => {
   admin = await login('9000000001', 'admin123');
   assert.ok(admin);
+  // Deposits are tested on their own below; keep them out of the way of the booking tests.
+  await call('PUT', '/api/admin/settings', { token: admin, body: { deposit_procedures: '0', deposit_weekends: '0' } });
   const wd = weekday(tomorrow);
   const bad = await call('PUT', '/api/admin/availability', { token: admin, body: { windows: [
     { weekday: wd, start_time: '10:00', end_time: '12:00', slot_minutes: 30 },
@@ -421,4 +423,101 @@ test('razorpay: pay online, verify the signature, webhook, abandon and refund', 
   await require('../src/routes/shop').expireUnpaidOrders();
   const reconciled = (await call('GET', '/api/staff/orders', { token: reception })).body.orders.find((o) => o.id === e.body.order.id);
   assert.equal(reconciled.payment_status, 'paid');
+});
+
+/** First date from `from` days ahead whose weekday passes `ok`. */
+function nextDate(from, ok) {
+  for (let i = from; i < from + 14; i++) {
+    const d = addDays(today(), i);
+    const [y, m, dd] = d.split('-').map(Number);
+    if (ok(new Date(y, m - 1, dd).getDay())) return d;
+  }
+  throw new Error('no date');
+}
+
+test('deposits: procedures and weekends need ₹1000 online; slot is held, paid, and refunded on early cancel', async () => {
+  const crypto = require('crypto');
+  const sign = (o, p) => crypto.createHmac('sha256', 'rzp_test_secret').update(`${o}|${p}`).digest('hex');
+  await call('PUT', '/api/admin/settings', { token: admin, body: { deposit_amount: '1000', deposit_procedures: '1', deposit_weekends: '1', deposit_refund_hours: '24' } });
+  const weekday = nextDate(10, (d) => d >= 1 && d <= 5);
+  const weekend = nextDate(10, (d) => d === 0 || d === 6);
+
+  // A skin visit on a weekday needs nothing.
+  const plain = await call('POST', '/api/appointments', { body: { name: 'Dev', phone: '9866100001', concern: 'skin', date: weekday, start_time: '10:00' } });
+  assert.equal(plain.status, 201);
+  assert.equal(plain.body.appointment.status, 'booked');
+  assert.equal(plain.body.razorpay, null);
+
+  // A procedure: held while paying, for exactly ₹1000.
+  const proc = await call('POST', '/api/appointments', { body: { name: 'Dev', phone: '9866100002', concern: 'procedure', date: weekday, start_time: '11:00' } });
+  assert.equal(proc.status, 201);
+  assert.equal(proc.body.appointment.status, 'pending_payment');
+  assert.equal(proc.body.razorpay.amount, 100000);
+  const held = (await call('GET', `/api/slots?date=${weekday}`)).body.slots.find((s) => s.start === '11:00');
+  assert.equal(held.available, false);
+  const o = proc.body.razorpay.order_id;
+  assert.equal((await call('POST', `/api/appointments/${proc.body.appointment.id}/deposit/verify`, { body: { razorpay_order_id: o, razorpay_payment_id: 'pay_d1', razorpay_signature: 'bad' } })).status, 400);
+  const paid = await call('POST', `/api/appointments/${proc.body.appointment.id}/deposit/verify`, { body: { razorpay_order_id: o, razorpay_payment_id: 'pay_d1', razorpay_signature: sign(o, 'pay_d1') } });
+  assert.equal(paid.body.appointment.status, 'booked');
+  assert.equal(paid.body.appointment.deposit.status, 'paid');
+
+  // Weekend: deposit too. Closing the window frees the slot.
+  const wk = await call('POST', '/api/appointments', { body: { name: 'Dev', phone: '9866100003', concern: 'skin', date: weekend, start_time: '10:00' } });
+  assert.equal(wk.body.appointment.status, 'pending_payment');
+  await call('POST', `/api/appointments/${wk.body.appointment.id}/deposit/abandon`, { body: { razorpay_order_id: wk.body.razorpay.order_id } });
+  assert.equal((await call('GET', `/api/slots?date=${weekend}`)).body.slots.find((s) => s.start === '10:00').available, true);
+
+  // Staff bookings never ask for a deposit.
+  const walk = await call('POST', '/api/staff/appointments', { token: reception, body: { name: 'Dev', phone: '9866100004', concern: 'procedure', date: weekend, start_time: '11:00' } });
+  assert.equal(walk.body.appointment.status, 'booked');
+
+  // The patient cancels 10+ days ahead: refunded through Razorpay.
+  const claim = await call('POST', `/api/appointments/${proc.body.appointment.id}/claim`, { body: { phone: '9866100002', password: 'secret9' } });
+  const dev = claim.body.token;
+  const c = await call('POST', `/api/me/appointments/${proc.body.appointment.id}/cancel`, { token: dev });
+  assert.equal(c.body.deposit, 'refunded');
+  assert.equal(rzpCalls.at(-1).url, '/payments/pay_d1/refund');
+  assert.equal(rzpCalls.at(-1).body.amount, 100000);
+  await call('PUT', '/api/admin/settings', { token: admin, body: { deposit_procedures: '0', deposit_weekends: '0' } });
+});
+
+test('packages: sell a course, use sessions on visits (counted once), patient sees progress', async () => {
+  assert.equal((await call('POST', '/api/admin/packages', { token: doctor, body: {} })).status, 403);
+  const t = await call('POST', '/api/admin/packages', { token: admin, body: { name: 'Laser hair reduction — 6 sessions', sessions: 6, price: 18000, interval_days: 30 } });
+  assert.equal(t.status, 201);
+  const asha = await login('9811111111', 'secret1');
+  const ashaId = (await call('GET', '/api/auth/me', { token: asha })).body.user.id;
+  const sold = await call('POST', `/api/staff/packages/patient/${ashaId}`, { token: reception, body: { package_id: t.body.package.id, amount_paid: 9000, payment_method: 'upi' } });
+  assert.equal(sold.status, 201);
+  assert.equal(sold.body.package.remaining, 6);
+  const ppId = sold.body.package.id;
+
+  const v = await call('POST', '/api/staff/visits', { token: doctor, body: { patient_id: ashaId, diagnosis: 'Laser session', package_sessions: [ppId] } });
+  assert.deepEqual(v.body.visit.package_sessions.map((x) => [x.number, x.total]), [[1, 6]]);
+  // Editing the same visit doesn't count it twice; unticking gives it back.
+  await call('PUT', `/api/staff/visits/${v.body.visit.id}`, { token: doctor, body: { package_sessions: [ppId] } });
+  let pk = (await call('GET', `/api/staff/packages/patient/${ashaId}`, { token: doctor })).body.packages.find((p) => p.id === ppId);
+  assert.equal(pk.sessions_used, 1);
+  await call('PUT', `/api/staff/visits/${v.body.visit.id}`, { token: doctor, body: { package_sessions: [] } });
+  pk = (await call('GET', `/api/staff/packages/patient/${ashaId}`, { token: doctor })).body.packages.find((p) => p.id === ppId);
+  assert.equal(pk.sessions_used, 0);
+  await call('PUT', `/api/staff/visits/${v.body.visit.id}`, { token: doctor, body: { package_sessions: [ppId] } });
+
+  const overview = (await call('GET', '/api/me/overview', { token: asha })).body;
+  const mine = overview.packages.find((p) => p.id === ppId);
+  assert.equal(mine.sessions_used, 1);
+  assert.equal(mine.remaining, 5);
+});
+
+test('prescribed products: the doctor finds shop items, and the patient sees them to buy', async () => {
+  const product = (await call('POST', '/api/admin/products', { token: admin, body: { name: 'Prescribed Barrier Cream', category: 'moisturisers', price: 990, stock: 4 } })).body.product;
+  const sugg = (await call('GET', '/api/staff/medicines?q=barrier', { token: doctor })).body;
+  assert.ok(sugg.products.some((p) => p.id === product.id));
+  const asha = await login('9811111111', 'secret1');
+  const ashaId = (await call('GET', '/api/auth/me', { token: asha })).body.user.id;
+  const v = await call('POST', '/api/staff/visits', { token: doctor, body: { patient_id: ashaId, diagnosis: 'Dry skin', items: [{ medicine: 'Prescribed Barrier Cream', product_id: product.id, frequency: 'Twice daily' }, { medicine: 'Plain tablet' }] } });
+  const seen = (await call('GET', `/api/me/visits/${v.body.visit.id}`, { token: asha })).body.visit;
+  assert.equal(seen.items[0].product.price, 990);
+  assert.equal(seen.items[0].product.slug, product.slug);
+  assert.equal(seen.items[1].product, undefined);
 });

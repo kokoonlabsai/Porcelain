@@ -64,6 +64,7 @@ const GROUPS = [
   { id: 'waiting', label: 'Waiting', match: (a) => a.status === 'checked_in' },
   { id: 'upcoming', label: 'Upcoming', match: (a) => a.status === 'booked' },
   { id: 'seen', label: 'Seen', match: (a) => a.status === 'completed', folded: true },
+  { id: 'deposit', label: 'Awaiting deposit', match: (a) => a.status === 'pending_payment', folded: true },
   { id: 'missed', label: 'Cancelled & no-shows', match: (a) => ['cancelled', 'no_show'].includes(a.status), folded: true },
 ];
 
@@ -122,10 +123,18 @@ export function AppointmentRow({ a, onChange }) {
   const [menu, setMenu] = useState(false);
   const clinician = user.role === 'doctor' || user.role === 'admin';
   const active = ['booked', 'checked_in'].includes(a.status);
+  const paidDeposit = a.deposit?.status === 'paid' ? a.deposit.amount : 0;
   const setStatus = async (status) => {
     setMenu(false);
+    let body = { status };
+    if (paidDeposit && status === 'cancelled') {
+      // Clinic-side cancel: refund by default; keep it if the patient cancelled late.
+      const refund = window.confirm(`Refund the ₹${paidDeposit.toLocaleString('en-IN')} deposit to ${firstName(a.name)}?\n\nOK = cancel and refund · Cancel = cancel and keep the deposit`);
+      body = { status, refund_deposit: refund };
+    }
+    if (paidDeposit && status === 'no_show' && !window.confirm(`Mark as no-show? The ₹${paidDeposit.toLocaleString('en-IN')} deposit is kept.`)) return;
     try {
-      await api(`/staff/appointments/${a.id}`, { method: 'PATCH', body: { status } });
+      await api(`/staff/appointments/${a.id}`, { method: 'PATCH', body });
       onChange();
     } catch (e) { toast(e.message, 'err'); }
   };
@@ -133,10 +142,12 @@ export function AppointmentRow({ a, onChange }) {
 
   // One clear action per row: doctors consult, reception checks people in.
   let action = null;
-  if (a.visit_id) action = <button className="link small" onClick={() => nav(`/staff/visits/${a.visit_id}`)}>View</button>;
+  if (a.status === 'pending_payment') action = <span className="tiny muted">Paying…</span>;
+  else if (a.visit_id) action = <button className="link small" onClick={() => nav(`/staff/visits/${a.visit_id}`)}>View</button>;
   else if (clinician && active) action = <Button className="primary sm" onClick={consult}>Consult</Button>;
   else if (a.status === 'booked') action = <Button className="sm" onClick={() => setStatus('checked_in')}>Check in</Button>;
 
+  const depositText = { paid: 'deposit paid', adjusted: 'deposit adjusted', refunded: 'deposit refunded', forfeited: 'deposit kept', pending: 'deposit pending' }[a.deposit?.status];
   const note = [concernLabel(a.concern), a.visit_count === 0 ? 'First visit' : null, a.description ? `“${a.description}”` : null].filter(Boolean).join(' · ');
   return (
     <div className={`appt-row ${a.status}`}>
@@ -144,6 +155,7 @@ export function AppointmentRow({ a, onChange }) {
       <div style={{ minWidth: 0 }}>
         <Link to={`/staff/patients/${a.patient_id}`} className="appt-name">{a.name}</Link>
         <div className="appt-note">{note}</div>
+        {depositText && <div className={`appt-deposit ${a.deposit.status}`}>₹{a.deposit.amount.toLocaleString('en-IN')} {depositText}{a.deposit.status === 'paid' && ['checked_in', 'booked'].includes(a.status) ? ' — adjust against the bill' : ''}</div>}
       </div>
       <div className="row acts gap-6" style={{ justifyContent: 'flex-end', position: 'relative' }}>
         {action}

@@ -48,8 +48,11 @@ app.use('/api/shop', rateLimit(30, 60_000), shop.pub);
 app.use('/api/me/orders', shop.mine);
 app.use('/api/me', require('./routes/patient'));
 app.use('/api/staff/orders', shop.staff);
+const packages = require('./routes/packages');
+app.use('/api/staff/packages', packages.staff);
 app.use('/api/staff', require('./routes/staff'));
 app.use('/api/admin/products', shop.admin);
+app.use('/api/admin/packages', packages.admin);
 app.use('/api/admin', require('./routes/admin'));
 
 /** Photos and reports: the patient they belong to (if shared with them) or any staff member. */

@@ -1,5 +1,7 @@
 const express = require('express');
-const { db, oid, out } = require('../db');
+const { db, oid, out, getSettings } = require('../db');
+const deposits = require('../deposits');
+const { packagesForPatient } = require('./packages');
 const { HttpError, wrap, requireAuth, today, toMinutes } = require('../util');
 const { visitDetails, ATTACHMENT_FIELDS } = require('../records');
 
@@ -48,6 +50,7 @@ router.get(
       pending_medicines: pending?.n || 0,
       follow_up: followUp,
       reads: out(reads),
+      packages: (await packagesForPatient(id)).filter((p) => p.status !== 'cancelled'),
     });
   })
 );
@@ -69,8 +72,24 @@ router.post(
     const now = new Date();
     const started = a.date < today() || (a.date === today() && toMinutes(a.start_time) <= now.getHours() * 60 + now.getMinutes());
     if (started) throw new HttpError(409, 'This appointment has already started. Please call the clinic.');
+    // A paid deposit is refunded if they cancel early enough, and kept otherwise.
+    let deposit = null;
+    if (deposits.depositPaid(a)) {
+      const hours = Number((await getSettings()).deposit_refund_hours) || 24;
+      if (deposits.hoursUntil(a) >= hours) {
+        try {
+          await deposits.refundDeposit(a);
+          deposit = 'refunded';
+        } catch {
+          throw new HttpError(502, 'We couldn’t process your deposit refund just now. Please try again, or call the clinic.');
+        }
+      } else {
+        await db.appointments.updateOne({ _id: a._id }, { $set: { 'deposit.status': 'forfeited' } });
+        deposit = 'forfeited';
+      }
+    }
     await db.appointments.updateOne({ _id: a._id }, { $set: { status: 'cancelled' } });
-    res.json({ appointment: out({ ...a, status: 'cancelled' }) });
+    res.json({ appointment: out(await db.appointments.findOne({ _id: a._id })), deposit });
   })
 );
 

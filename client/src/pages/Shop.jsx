@@ -5,6 +5,7 @@ import { api } from '../lib/api';
 import { useApp, useLoad } from '../lib/store';
 import { useCart, inr } from '../lib/cart';
 import { useReveal } from '../lib/reveal';
+import { loadRazorpay, payWithRazorpay } from '../lib/razorpay';
 import { Button, Field, Empty, ErrorBox, Skeleton, fieldErrors } from '../components/ui';
 import ProductImage from '../components/ProductImage';
 
@@ -219,40 +220,6 @@ export function CartDrawer() {
       </aside>
     </>
   );
-}
-
-/** Loads Razorpay's checkout script once, on demand. */
-let razorpayScript;
-function loadRazorpay() {
-  if (window.Razorpay) return Promise.resolve();
-  razorpayScript ||= new Promise((resolve, reject) => {
-    const el = document.createElement('script');
-    el.src = 'https://checkout.razorpay.com/v1/checkout.js';
-    el.onload = () => resolve();
-    el.onerror = () => { razorpayScript = null; reject(new Error('Couldn’t load the payment window. Check your connection and try again.')); };
-    document.body.appendChild(el);
-  });
-  return razorpayScript;
-}
-
-/** Opens Razorpay's window; resolves with the signed result, or null if the customer closed it. */
-function payWithRazorpay(rzp) {
-  return new Promise((resolve, reject) => {
-    const checkout = new window.Razorpay({
-      key: rzp.key,
-      order_id: rzp.order_id,
-      amount: rzp.amount,
-      currency: rzp.currency,
-      name: rzp.name,
-      description: rzp.description,
-      prefill: rzp.prefill,
-      theme: { color: '#1F3264' },
-      handler: (result) => resolve(result),
-      modal: { ondismiss: () => resolve(null), confirm_close: true },
-    });
-    checkout.on('payment.failed', () => { /* Razorpay shows the error and lets them retry inside the window. */ });
-    try { checkout.open(); } catch (e) { reject(e); }
-  });
 }
 
 export function Checkout() {
