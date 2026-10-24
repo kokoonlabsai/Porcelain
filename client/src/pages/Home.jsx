@@ -1,33 +1,40 @@
 import { Link, useNavigate } from 'react-router-dom';
-import { ArrowRight, ArrowUpRight, MapPin, Phone, MessageCircle } from 'lucide-react';
+import { ArrowRight, ArrowUpRight, MapPin, Phone, MessageCircle, Droplets, Leaf, Syringe, Zap, Sun, HelpCircle } from 'lucide-react';
 import { useApp, useLoad } from '../lib/store';
 import { api } from '../lib/api';
 import { useReveal } from '../lib/reveal';
 import { catLabel, WEEKDAYS, fmtTime } from '../lib/format';
 import { CAT_COLORS } from '../components/ui';
 import Facade from '../components/Facade';
-
-const ROMAN = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII'];
+import CountUp from '../components/CountUp';
 
 const TREATMENTS = [
-  { concern: 'skin', title: 'Clinical dermatology', text: 'Acne, pigmentation, eczema, allergies' },
-  { concern: 'hair', title: 'Hair & scalp', text: 'Hair fall, thinning, dandruff, PRP' },
-  { concern: 'procedure', title: 'Aesthetic medicine', text: 'Skin boosters, anti-ageing, refinements' },
-  { concern: 'procedure', title: 'Lasers & peels', text: 'Laser hair reduction, peels, scars' },
-  { concern: 'wellness', title: 'Skin wellness', text: 'A routine made for your skin' },
+  { concern: 'skin', icon: Droplets, title: 'Skin', text: 'Acne, pigmentation, allergies' },
+  { concern: 'hair', icon: Leaf, title: 'Hair', text: 'Hair fall, thinning, scalp' },
+  { concern: 'procedure', icon: Syringe, title: 'Aesthetics', text: 'Boosters, anti-ageing' },
+  { concern: 'procedure', icon: Zap, title: 'Lasers & peels', text: 'Hair reduction, scars' },
+  { concern: 'wellness', icon: Sun, title: 'Skin wellness', text: 'Your routine, done right' },
+  { concern: 'other', icon: HelpCircle, title: 'Not sure?', text: 'Just tell the doctor' },
 ];
 
-const RITUAL = [
+const STEPS = [
   { t: 'Consult', d: 'Unhurried time with your doctor.' },
-  { t: 'Prescription', d: 'Saved to your phone, instantly.' },
+  { t: 'Prescription', d: 'On your phone, instantly.' },
   { t: 'Collect', d: 'Downstairs. Just give your name.' },
   { t: 'Return', d: 'We remind you when it’s time.' },
+];
+
+const STATS = [
+  { to: 2, suffix: '', label: 'Specialist doctors' },
+  { to: 1, suffix: ' min', label: 'To book online' },
+  { to: 24, suffix: '/7', label: 'Your records, online' },
+  { to: 0, suffix: '', label: 'Lost prescriptions' },
 ];
 
 const MARQUEE = ['Clinical dermatology', 'Acne & scars', 'Hair restoration', 'Pigmentation', 'Laser', 'Chemical peels', 'Skin boosters', 'PRP', 'Medi-facials'];
 
 /** Stagger for children revealed together. */
-const delay = (i) => ({ transitionDelay: `${i * 90}ms` });
+const delay = (i, step = 80) => ({ transitionDelay: `${i * step}ms` });
 
 export default function Home() {
   const { settings, clinic } = useApp();
@@ -44,6 +51,7 @@ export default function Home() {
     { name: settings.doctor_name, cred: settings.doctor_credentials, bio: settings.doctor_bio },
     { name: settings.doctor2_name, cred: settings.doctor2_credentials, bio: settings.doctor2_bio },
   ].filter((d) => d.name);
+  const stats = STATS.map((s) => (s.label === 'Specialist doctors' ? { ...s, to: doctors.length || 1, label: doctors.length === 1 ? 'Specialist doctor' : s.label } : s));
 
   return (
     <>
@@ -56,8 +64,8 @@ export default function Home() {
               <span className="word reveal d1">The art of</span>{' '}
               <span className="word reveal d2"><em>healthy</em> skin.</span>
             </h1>
-            <p className="lead reveal d3">Dermatology and aesthetic medicine, by doctors who explain.</p>
-            <div className="row wrap reveal d3" style={{ gap: 14, marginTop: 44 }}>
+            <p className="lead reveal d3">Dermatology and aesthetics, by doctors who explain.</p>
+            <div className="row wrap reveal d3" style={{ gap: 14, marginTop: 40 }}>
               <Link to="/book" className="btn primary lg">Book a consultation</Link>
               <a href="#treatments" className="btn ghost lg">Treatments <ArrowRight size={16} /></a>
             </div>
@@ -70,17 +78,36 @@ export default function Home() {
         <div className="track">{[...MARQUEE, ...MARQUEE].map((t, i) => <span key={i}>{t}</span>)}</div>
       </div>
 
-      {/* ---------- La maison ---------- */}
+      {/* ---------- Statement + big numbers ---------- */}
       <section className="lux-section">
-        <div className="contain center">
-          <div className="eyebrow sr">La maison</div>
-          <h2 className="lux-title mt-16 sr">Medicine first.<br /><em>Beauty,</em> naturally.</h2>
-          <div className="stats-row mt-48">
-            {[['MD', 'Dermatologist-led'], ['1 : 1', 'Time with your doctor'], ['24/7', 'Your records, online']].map(([v, l], i) => (
-              <div key={l} className="sr" style={delay(i)}>
-                <div className="stat-v">{v}</div>
-                <div className="stat-l">{l}</div>
+        <div className="contain">
+          <h2 className="big-statement sr">Medicine first.<br /><em>Beauty,</em> naturally.</h2>
+          <div className="numbers mt-64">
+            {stats.map((s, i) => (
+              <div key={s.label} className="number sr" style={delay(i)}>
+                <div className="v"><CountUp to={s.to} suffix={s.suffix} /></div>
+                <div className="l">{s.label}</div>
               </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ---------- Treatments: icon grid ---------- */}
+      <section className="lux-section tinted" id="treatments">
+        <div className="contain">
+          <div className="section-intro">
+            <h2 className="big-statement sr">What brings you <em>in?</em></h2>
+            <p className="sub sr">Tap one to book.</p>
+          </div>
+          <div className="tile-grid mt-48">
+            {TREATMENTS.map((t, i) => (
+              <button key={t.title} className="tile sr" style={delay(i, 70)} onClick={() => nav(`/book?concern=${t.concern}`)}>
+                <span className="tile-ico"><t.icon size={30} strokeWidth={1.6} /></span>
+                <span className="tile-title">{t.title}</span>
+                <span className="tile-text">{t.text}</span>
+                <ArrowUpRight className="tile-go" size={20} />
+              </button>
             ))}
           </div>
         </div>
@@ -88,15 +115,16 @@ export default function Home() {
 
       {/* ---------- Doctors ---------- */}
       {doctors.length > 0 && (
-        <section className="lux-section" style={{ paddingTop: 0 }}>
+        <section className="lux-section">
           <div className="contain">
-            <div className="eyebrow sr">Your doctors</div>
-            <h2 className="lux-title mt-16 sr">In <em>expert</em> hands</h2>
+            <div className="section-intro">
+              <h2 className="big-statement sr">In <em>expert</em> hands.</h2>
+            </div>
             <div className="doctor-grid mt-48">
               {doctors.map((d, i) => {
                 const initial = d.name.replace(/^dr\.?\s+/i, '').trim()[0] || 'P';
                 return (
-                  <div key={d.name} className="doctor-card sr" style={delay(i)}>
+                  <div key={d.name} className="doctor-card sr" style={delay(i, 120)}>
                     <div className="arch">{initial}</div>
                     <h3>{d.name}</h3>
                     <div className="cred">{d.cred}</div>
@@ -109,42 +137,20 @@ export default function Home() {
         </section>
       )}
 
-      {/* ---------- Treatments ---------- */}
-      <section className="lux-section tinted" id="treatments">
-        <div className="contain treat-grid">
-          <div className="treat-intro sr">
-            <div className="eyebrow">Treatments</div>
-            <h2 className="lux-title mt-16">What brings you <em>in?</em></h2>
-            <p className="lux-lead mt-24">Pick one. We’ll take it from there.</p>
-          </div>
-          <div className="treatments">
-            {TREATMENTS.map((t, i) => (
-              <button key={t.title} className="treatment sr" style={delay(i)} onClick={() => nav(`/book?concern=${t.concern}`)}>
-                <span className="no">{ROMAN[i]}</span>
-                <span>
-                  <h3>{t.title}</h3>
-                  <p>{t.text}</p>
-                </span>
-                <ArrowUpRight className="go" size={22} />
-              </button>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* ---------- The Porcelain way ---------- */}
-      <section className="lux-section">
+      {/* ---------- Steps ---------- */}
+      <section className="lux-section tinted">
         <div className="contain">
-          <div className="center">
-            <div className="eyebrow sr">The {brandWord.charAt(0) + brandWord.slice(1).toLowerCase()} way</div>
-            <h2 className="lux-title mt-16 sr">Nothing is <em>lost.</em></h2>
+          <div className="section-intro">
+            <h2 className="big-statement sr">Nothing is <em>lost.</em></h2>
+            <p className="sub sr">From your first visit to your next.</p>
           </div>
-          <div className="ritual-row mt-64">
-            {RITUAL.map((r, i) => (
-              <div key={r.t} className="ritual sr" style={delay(i)}>
-                <div className="n">{ROMAN[i]}</div>
-                <h3>{r.t}</h3>
-                <p>{r.d}</p>
+          <div className="steps-row mt-64 sr">
+            <div className="steps-line" />
+            {STEPS.map((s, i) => (
+              <div key={s.t} className="step-big" style={delay(i, 160)}>
+                <div className="n">0{i + 1}</div>
+                <h3>{s.t}</h3>
+                <p>{s.d}</p>
               </div>
             ))}
           </div>
@@ -153,21 +159,18 @@ export default function Home() {
 
       {/* ---------- Journal ---------- */}
       {journal.length > 0 && (
-        <section className="lux-section" style={{ paddingTop: 0 }}>
+        <section className="lux-section">
           <div className="contain">
-            <div className="row between wrap" style={{ alignItems: 'flex-end' }}>
-              <div>
-                <div className="eyebrow sr">Le journal</div>
-                <h2 className="lux-title mt-16 sr">No <em>myths.</em></h2>
-              </div>
-              <Link to="/learn" className="caps-link sr">Read the journal <ArrowRight size={14} /></Link>
+            <div className="row between wrap" style={{ alignItems: 'flex-end', gap: 24 }}>
+              <h2 className="big-statement sr" style={{ margin: 0 }}>No <em>myths.</em></h2>
+              <Link to="/learn" className="caps-link sr">All articles <ArrowRight size={14} /></Link>
             </div>
-            <div className="grid g-3 mt-48" style={{ gap: 40 }}>
+            <div className="grid g-3 mt-48" style={{ gap: 24 }}>
               {journal.map((a, i) => (
-                <Link key={a.slug} to={`/learn/${a.slug}`} className="journal-card sr" style={delay(i)}>
-                  <div className="k">{catLabel(a.category)} · {a.read_minutes} min</div>
+                <Link key={a.slug} to={`/learn/${a.slug}`} className="journal-tile sr" style={delay(i, 100)}>
+                  <span className="k">{catLabel(a.category)} · {a.read_minutes} min</span>
                   <h3>{a.title}</h3>
-                  <span className="caps-link mt-16">Read <ArrowRight size={14} /></span>
+                  <span className="caps-link">Read <ArrowRight size={14} /></span>
                 </Link>
               ))}
             </div>
@@ -180,21 +183,20 @@ export default function Home() {
         <div className="awning" />
         <div className="lux-section"><div className="contain grid g-2" style={{ gap: 72 }}>
           <div className="sr">
-            <div className="eyebrow">Visit</div>
-            <h2 className="lux-title mt-16">Behind the <em>navy door.</em></h2>
-            <p className="lux-lead mt-24">Book in under a minute. No account needed.</p>
+            <h2 className="big-statement">Behind the <em>navy door.</em></h2>
+            <p className="sub">Book in a minute. No account needed.</p>
             <div className="row wrap mt-32" style={{ gap: 12 }}>
               <Link to="/book" className="btn light lg">Book a consultation</Link>
               {settings.maps_url && <a className="btn lg" href={settings.maps_url} target="_blank" rel="noreferrer">Directions</a>}
             </div>
             <div className="stack gap-10 mt-32 visit-contact">
-              {settings.address && <div className="row top gap-6"><MapPin size={16} style={{ marginTop: 4 }} /><span>{settings.address}</span></div>}
-              {settings.phone && <a className="row gap-6" href={`tel:${settings.phone}`}><Phone size={16} />{settings.phone}</a>}
-              {settings.whatsapp && <a className="row gap-6" href={`https://wa.me/${settings.whatsapp.replace(/\D/g, '')}`} target="_blank" rel="noreferrer"><MessageCircle size={16} />WhatsApp</a>}
+              {settings.address && <div className="row top gap-6"><MapPin size={18} style={{ marginTop: 3 }} /><span>{settings.address}</span></div>}
+              {settings.phone && <a className="row gap-6" href={`tel:${settings.phone}`}><Phone size={18} />{settings.phone}</a>}
+              {settings.whatsapp && <a className="row gap-6" href={`https://wa.me/${settings.whatsapp.replace(/\D/g, '')}`} target="_blank" rel="noreferrer"><MessageCircle size={18} />WhatsApp</a>}
             </div>
           </div>
           <div className="sr" style={delay(1)}>
-            <div className="eyebrow" style={{ marginBottom: 12 }}>Hours</div>
+            <div className="hours-label">Open</div>
             <HoursTable hours={clinic?.hours || []} />
           </div>
         </div></div>
@@ -216,10 +218,10 @@ function HoursTable({ hours }) {
     <div className="hours-table">
       {groups.map((g) => (
         <div key={g.days[0]} className="row between top">
-          <span className="serif" style={{ fontSize: 24, color: '#fff' }}>
-            {WEEKDAYS[g.days[0]]}{g.days.length > 1 ? ` – ${WEEKDAYS[g.days[g.days.length - 1]]}` : ''}
+          <span className="day">
+            {WEEKDAYS[g.days[0]].slice(0, 3)}{g.days.length > 1 ? ` – ${WEEKDAYS[g.days[g.days.length - 1]].slice(0, 3)}` : ''}
           </span>
-          <span className="pre" style={{ textAlign: 'right', color: g.text ? '#fff' : 'rgba(255,255,255,0.55)', lineHeight: 1.8 }}>{g.text || 'Closed'}</span>
+          <span className="pre time" style={!g.text ? { opacity: 0.55 } : undefined}>{g.text || 'Closed'}</span>
         </div>
       ))}
     </div>
