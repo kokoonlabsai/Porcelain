@@ -94,7 +94,8 @@ router.put(
       Object.keys(DEFAULT_SETTINGS).filter((k) => b[k] !== undefined).map((k) => [k, String(b[k] ?? '').trim().slice(0, 1000)])
     );
     for (const [k, v] of Object.entries(updates)) {
-      if (['booking_days_ahead', 'min_notice_minutes'].includes(k) && !/^\d{1,4}$/.test(v)) throw new HttpError(422, 'Use a whole number');
+      if (['booking_days_ahead', 'min_notice_minutes', 'shop_delivery_fee', 'shop_free_delivery_over'].includes(k) && !/^\d{1,6}$/.test(v)) throw new HttpError(422, 'Use a whole number');
+      if (k === 'shop_delivery' && !['0', '1'].includes(v)) throw new HttpError(422, 'Delivery must be on (1) or off (0)');
       if (k === 'clinic_name' && !v) throw new HttpError(422, 'The clinic needs a name');
     }
     if (Object.keys(updates).length) await db.settings.updateOne({ _id: 'clinic' }, { $set: updates }, { upsert: true });

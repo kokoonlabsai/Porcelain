@@ -115,4 +115,20 @@ async function welcome(patient, password) {
   return send(patient.email, `Your ${s.clinic_name} patient account`, html);
 }
 
-module.exports = { send, bookingConfirmation, appointmentReminder, visitSummary, followUpReminder, welcome, prettyDate, prettyTime };
+async function orderConfirmation(order) {
+  const s = await getSettings();
+  const inr = (n) => `₹${Number(n).toLocaleString('en-IN')}`;
+  const rows = order.items.map((i) => `<tr><td style="padding:6px 0">${esc(i.name)}${i.size ? ` <span style="color:#7a847f">(${esc(i.size)})</span>` : ''} × ${i.qty}</td><td style="padding:6px 0;text-align:right">${inr(i.price * i.qty)}</td></tr>`).join('');
+  const how = order.fulfilment === 'delivery'
+    ? `We’ll deliver to ${esc([order.address.line, order.address.city, order.address.pincode].join(', '))}. Pay on delivery.`
+    : `Collect it from the clinic${s.address ? ` (${esc(s.address)})` : ''} and pay there. We’ll let you know when it’s ready.`;
+  const html = layout(s, `Order ${esc(order.number)} placed`, `
+    <p>Hi ${esc(order.customer.name)}, thank you for your order.</p>
+    <table style="width:100%;border-collapse:collapse">${rows}
+      ${order.delivery_fee ? `<tr><td style="padding:6px 0">Delivery</td><td style="text-align:right">${inr(order.delivery_fee)}</td></tr>` : ''}
+      <tr><td style="padding:10px 0;border-top:1px solid #eee"><b>Total</b></td><td style="padding:10px 0;border-top:1px solid #eee;text-align:right"><b>${inr(order.total)}</b></td></tr></table>
+    <p>${how}</p>`);
+  return send(order.customer.email, `Your ${s.clinic_name} order ${order.number}`, html);
+}
+
+module.exports = { orderConfirmation, send, bookingConfirmation, appointmentReminder, visitSummary, followUpReminder, welcome, prettyDate, prettyTime };

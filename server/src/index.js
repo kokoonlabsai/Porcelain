@@ -16,6 +16,7 @@ app.use(cors(origins.length ? { origin: origins } : undefined));
 app.use((req, res, next) => ready.then(() => next(), next));
 // Photo uploads arrive as base64 inside JSON, so this route gets a bigger limit.
 app.use('/api/staff/attachments', express.json({ limit: '9mb' }));
+app.use('/api/admin/products', express.json({ limit: '5mb' }));
 app.use(express.json({ limit: '1mb' }));
 
 // Tiny in-memory rate limiter for login and booking.
@@ -40,8 +41,13 @@ setInterval(() => {
 
 app.get('/api/health', (req, res) => res.json({ ok: true }));
 app.use('/api/auth', rateLimit(20, 60_000), require('./routes/auth'));
+const shop = require('./routes/shop');
+app.use('/api/shop', rateLimit(30, 60_000), shop.pub);
+app.use('/api/me/orders', shop.mine);
 app.use('/api/me', require('./routes/patient'));
+app.use('/api/staff/orders', shop.staff);
 app.use('/api/staff', require('./routes/staff'));
+app.use('/api/admin/products', shop.admin);
 app.use('/api/admin', require('./routes/admin'));
 
 /** Photos and reports: the patient they belong to (if shared with them) or any staff member. */

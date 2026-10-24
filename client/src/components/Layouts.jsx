@@ -1,15 +1,18 @@
 import { useEffect, useState } from 'react';
 import { Link, NavLink, Outlet, useNavigate } from 'react-router-dom';
 import {
-  Mail, Home, CalendarPlus, ClipboardList, CalendarDays, BookOpen, UserRound, LogOut, Users, Pill, CalendarClock, Settings, Newspaper, UserCog, LayoutDashboard, KeyRound, MapPin, Phone, MessageCircle,
+  ShoppingBag, Package, Mail, Home, CalendarPlus, ClipboardList, CalendarDays, BookOpen, UserRound, LogOut, Users, Pill, CalendarClock, Settings, Newspaper, UserCog, LayoutDashboard, KeyRound, MapPin, Phone, MessageCircle,
 } from 'lucide-react';
 import { useApp } from '../lib/store';
 import { api } from '../lib/api';
 import { Logo, Button, Field, Modal, Toasts } from './ui';
+import { useCart } from '../lib/cart';
+import { CartDrawer } from '../pages/Shop';
 import { WEEKDAYS, fmtTime } from '../lib/format';
 
 export function PublicLayout() {
   const { user, isStaff, settings } = useApp();
+  const { count, setOpen } = useCart();
   const [scrolled, setScrolled] = useState(false);
   useEffect(() => {
     const on = () => setScrolled(window.scrollY > 8);
@@ -24,10 +27,14 @@ export function PublicLayout() {
           <nav className="nav-links">
             <NavLink to="/" end>Maison</NavLink>
             <a href="/#treatments">Treatments</a>
+            <NavLink to="/shop">Shop</NavLink>
             <NavLink to="/learn">Journal</NavLink>
           </nav>
           <Logo />
           <div className="row gap-6" style={{ justifyContent: 'flex-end' }}>
+            <button className="btn ghost icon bag-btn" onClick={() => setOpen(true)} aria-label={`Your bag, ${count} item${count === 1 ? '' : 's'}`}>
+              <ShoppingBag size={20} />{count > 0 && <span className="bag-count">{count}</span>}
+            </button>
             {home ? (
               <Link className="btn primary sm" to={home}>{isStaff ? 'Dashboard' : 'My portal'}</Link>
             ) : (
@@ -63,6 +70,7 @@ export function PublicLayout() {
           <div className="stack gap-6">
             <div className="strong">Explore</div>
             <Link to="/book">Book a consultation</Link>
+            <Link to="/shop">Shop skincare</Link>
             <Link to="/learn">The journal</Link>
             <Link to="/login">Patient login</Link>
             <Link to="/signup">Create an account</Link>
@@ -72,6 +80,7 @@ export function PublicLayout() {
           © {new Date().getFullYear()} {settings.clinic_name}. Information on this site is educational and doesn’t replace a consultation. · <Link to="/login" className="link">Staff login</Link>
         </div>
       </footer>
+      <CartDrawer />
       <Toasts />
     </>
   );
@@ -184,16 +193,21 @@ export function PortalLayout() {
     { to: '/portal/visits', icon: ClipboardList, label: 'Prescriptions & visits', short: 'Visits' },
     { to: '/portal/appointments', icon: CalendarDays, label: 'Appointments', short: 'Bookings' },
     { to: '/portal/learn', icon: BookOpen, label: 'Learn' },
+    { to: '/portal/orders', icon: ShoppingBag, label: 'Shop orders', short: 'Orders' },
     { to: '/portal/profile', icon: UserRound, label: 'Profile' },
   ];
-  return <Shell links={links} tabs={links.filter((l) => l.to !== '/portal/appointments')} />;
+  return <Shell links={links} tabs={links.filter((l) => !['/portal/appointments', '/portal/orders'].includes(l.to))} />;
 }
 
 export function StaffLayout() {
   const { user } = useApp();
   const [pending, setPending] = useState(0);
+  const [orders, setOrders] = useState(0);
   useEffect(() => {
-    const load = () => api('/staff/dashboard').then((d) => setPending(d.pharmacy_pending)).catch(() => {});
+    const load = () => {
+      api('/staff/dashboard').then((d) => setPending(d.pharmacy_pending)).catch(() => {});
+      api('/staff/orders', { query: { status: 'placed' } }).then((d) => setOrders(d.orders.length)).catch(() => {});
+    };
     load();
     const t = setInterval(load, 60_000);
     return () => clearInterval(t);
@@ -204,15 +218,17 @@ export function StaffLayout() {
     { to: '/staff/appointments', icon: CalendarDays, label: 'Appointments', short: 'Calendar' },
     { to: '/staff/patients', icon: Users, label: 'Patients' },
     { to: '/staff/pharmacy', icon: Pill, label: 'Pharmacy', count: pending },
+    { to: '/staff/orders', icon: ShoppingBag, label: 'Shop orders', count: orders },
     ...(admin ? [
       { section: 'Admin' },
       { to: '/staff/schedule', icon: CalendarClock, label: 'Schedule & slots' },
       { to: '/staff/staff', icon: UserCog, label: 'Staff accounts' },
+      { to: '/staff/products', icon: Package, label: 'Products' },
       { to: '/staff/articles', icon: Newspaper, label: 'Learn articles' },
       { to: '/staff/settings', icon: Settings, label: 'Clinic details' },
     ] : []),
   ];
-  const tabs = links.filter((l) => !l.section).slice(0, 4);
+  const tabs = links.filter((l) => !l.section).slice(0, admin ? 4 : 5);
   if (admin) tabs.push({ to: '/staff/more', icon: Settings, label: 'More' });
   return <Shell links={links} tabs={tabs} />;
 }

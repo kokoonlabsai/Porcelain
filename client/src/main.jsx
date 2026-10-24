@@ -4,6 +4,7 @@ import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-route
 import { useEffect } from 'react';
 import './styles.css';
 import { AppProvider, useApp } from './lib/store';
+import { CartProvider } from './lib/cart';
 import { PublicLayout, PortalLayout, StaffLayout } from './components/Layouts';
 import { PageSkeleton } from './components/ui';
 import Home from './pages/Home';
@@ -17,6 +18,8 @@ import VisitEditor from './pages/VisitEditor';
 import Pharmacy from './pages/Pharmacy';
 import PrintVisit from './pages/PrintVisit';
 import { Schedule, StaffAccounts, ArticlesAdmin, ClinicSettings, More } from './pages/Admin';
+import { ShopList, ProductPage, Checkout } from './pages/Shop';
+import { ShopOrders, ProductsAdmin, PortalOrders } from './pages/ShopAdmin';
 
 function ScrollTop() {
   const { pathname } = useLocation();
@@ -53,6 +56,9 @@ function App() {
           <Route path="book" element={<Book />} />
           <Route path="learn" element={<LearnList />} />
           <Route path="learn/:slug" element={<Article />} />
+          <Route path="shop" element={<ShopList />} />
+          <Route path="shop/checkout" element={<Checkout />} />
+          <Route path="shop/:slug" element={<ProductPage />} />
         </Route>
         <Route path="login" element={<GuestOnly><Login /></GuestOnly>} />
         <Route path="signup" element={<GuestOnly><Signup /></GuestOnly>} />
@@ -67,6 +73,7 @@ function App() {
           <Route path="learn" element={<LearnList inPortal />} />
           <Route path="learn/:slug" element={<Article inPortal />} />
           <Route path="profile" element={<PortalProfile />} />
+          <Route path="orders" element={<PortalOrders />} />
         </Route>
 
         <Route path="staff" element={<Guard roles={STAFF}><StaffLayout /></Guard>}>
@@ -77,6 +84,8 @@ function App() {
           <Route path="visits/new" element={<VisitEditor />} />
           <Route path="visits/:id" element={<VisitEditor />} />
           <Route path="pharmacy" element={<Pharmacy />} />
+          <Route path="orders" element={<ShopOrders />} />
+          <Route path="products" element={<Guard roles={['admin']}><ProductsAdmin /></Guard>} />
           <Route path="schedule" element={<Guard roles={['admin']}><Schedule /></Guard>} />
           <Route path="staff" element={<Guard roles={['admin']}><StaffAccounts /></Guard>} />
           <Route path="articles" element={<Guard roles={['admin']}><ArticlesAdmin /></Guard>} />
@@ -93,7 +102,9 @@ createRoot(document.getElementById('root')).render(
   <StrictMode>
     <BrowserRouter>
       <AppProvider>
-        <App />
+        <CartProvider>
+          <App />
+        </CartProvider>
       </AppProvider>
     </BrowserRouter>
   </StrictMode>

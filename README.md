@@ -46,6 +46,18 @@ The website and clinic app for Porcelain Skin Clinic, a dermatology and aestheti
 - **Learn articles**: write and edit articles with a simple formatting syntax and a preview.
 - **Clinic details**: name, doctor and qualifications (printed on prescriptions), phone, WhatsApp, address, maps link, how far ahead patients can book, and the minimum notice for booking.
 
+### Shop
+- **Online shop** at `/shop`:
+  - category filter, search and product pages
+  - a slide-in bag, and checkout
+- **Fulfilment:** customers pick up at the clinic and pay there, or get delivery with cash on delivery. No card details are handled.
+- **Delivery:** set the fee and the order value for free delivery under **Clinic details**.
+- **Stock:** goes down when an order is placed and back up if it's cancelled. Prices are always taken from the database.
+- **Admin → Products:** add products with photos, prices, MRP, stock and a "Doctor's pick" flag.
+- **Shop orders (all staff):** move each order from New → Confirmed → Ready → Completed, or cancel it.
+- **Patient portal:** patients see their orders there. Customers get an email confirmation if they gave an email.
+- **Demo products:** `seed:demo` adds sample products with drawn placeholders instead of photos.
+
 ### Privacy rules built in
 - Patients only ever see their own records, and only the photos shared with them.
 - Private notes and patient medical notes are shown to doctors and admins only. Reception doesn't see them.
@@ -96,6 +108,7 @@ This uses a cheap setup: [MongoDB Atlas](https://www.mongodb.com/atlas) for the 
 | `attachments` | Photos and PDFs, stored as binary (up to 6 MB each) |
 | `availability`, `closures` | Weekly opening windows and days off |
 | `articles` | Learn articles |
+| `products`, `orders` | Shop products (photo stored as binary) and orders (items copied at the price paid) |
 | `settings` | One document (`_id: "clinic"`) with the clinic details |
 
 | Env var | |

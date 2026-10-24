@@ -19,6 +19,8 @@ const db = {
   attachments: col('attachments'),
   articles: col('articles'),
   settings: col('settings'),
+  products: col('products'),
+  orders: col('orders'),
 };
 
 /** Turns a URL/body id into an ObjectId, or null when it isn't one. */
@@ -71,6 +73,10 @@ const DEFAULT_SETTINGS = {
   instagram: 'https://www.instagram.com/porcelainskinclinic/',
   booking_days_ahead: '30',
   min_notice_minutes: '60',
+  shop_delivery: '1',
+  shop_delivery_fee: '99',
+  shop_free_delivery_over: '1499',
+  shop_delivery_areas: 'Bhopal',
 };
 
 /** Every day except Thursday, 12:00 noon – 7:45 PM, 30-minute slots. Admin can change it. */
@@ -99,6 +105,12 @@ async function setup() {
     db.articles.createIndex({ slug: 1 }, { unique: true }),
     db.closures.createIndex({ date: 1 }, { unique: true }),
     db.availability.createIndex({ weekday: 1, start_time: 1 }),
+    db.products.createIndex({ slug: 1 }, { unique: true }),
+    db.products.createIndex({ active: 1, category: 1 }),
+    db.orders.createIndex({ number: 1 }, { unique: true }),
+    db.orders.createIndex({ status: 1, created_at: -1 }),
+    db.orders.createIndex({ patient_id: 1, created_at: -1 }),
+    db.orders.createIndex({ 'customer.phone': 1 }),
   ]);
 
   // First start only: default settings, opening hours and the starter articles.

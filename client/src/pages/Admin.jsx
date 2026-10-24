@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Plus, Trash2, Copy, Save, CalendarOff, KeyRound, UserPlus, Pencil, Eye, Newspaper, CalendarClock, UserCog, Settings, LogOut } from 'lucide-react';
+import { ShoppingBag, Package, Plus, Trash2, Copy, Save, CalendarOff, KeyRound, UserPlus, Pencil, Eye, Newspaper, CalendarClock, UserCog, Settings, LogOut } from 'lucide-react';
 import { api } from '../lib/api';
 import { useApp, useLoad } from '../lib/store';
 import { WEEKDAYS, fmtDate, fmtTime, displayPhone, ARTICLE_CATS, catLabel, todayISO } from '../lib/format';
@@ -389,6 +389,10 @@ const SETTINGS_FIELDS = [
   ['email', 'Clinic email'],
   ['address', 'Address'],
   ['maps_url', 'Google Maps link'],
+  ['shop_delivery', 'Shop delivery', '1 = offer delivery, 0 = pick up at the clinic only'],
+  ['shop_delivery_fee', 'Delivery fee (₹)'],
+  ['shop_free_delivery_over', 'Free delivery on orders over (₹)', '0 = never free'],
+  ['shop_delivery_areas', 'Where you deliver', 'Shown in the shop, e.g. Bhopal'],
   ['booking_days_ahead', 'How many days ahead patients can book'],
   ['min_notice_minutes', 'Minimum notice for online booking (minutes)', 'Slots starting sooner than this aren’t offered online'],
 ];
@@ -418,7 +422,7 @@ export function ClinicSettings() {
         {SETTINGS_FIELDS.map(([k, label, hint]) => (
           <Field key={k} label={label} hint={hint}>
             {['address', 'doctor_bio', 'doctor2_bio', 'highlights', 'doctor_awards', 'doctor2_awards', 'founders_quote'].includes(k) ? <textarea className="input" rows={['highlights', 'doctor_awards', 'doctor2_awards', 'founders_quote'].includes(k) ? 4 : 2} value={f[k]} onChange={(e) => setF({ ...f, [k]: e.target.value })} />
-              : <input className="input" value={f[k]} onChange={(e) => setF({ ...f, [k]: e.target.value })} inputMode={['booking_days_ahead', 'min_notice_minutes'].includes(k) ? 'numeric' : undefined} />}
+              : <input className="input" value={f[k]} onChange={(e) => setF({ ...f, [k]: e.target.value })} inputMode={['booking_days_ahead', 'min_notice_minutes', 'shop_delivery_fee', 'shop_free_delivery_over', 'shop_delivery'].includes(k) ? 'numeric' : undefined} />}
           </Field>
         ))}
         <div><Button className="primary" loading={busy}>Save</Button></div>
@@ -433,6 +437,8 @@ export function More() {
   const links = [
     ['/staff/schedule', CalendarClock, 'Schedule & slots'],
     ['/staff/staff', UserCog, 'Staff accounts'],
+    ['/staff/orders', ShoppingBag, 'Shop orders'],
+    ['/staff/products', Package, 'Products'],
     ['/staff/articles', Newspaper, 'Learn articles'],
     ['/staff/settings', Settings, 'Clinic details'],
   ];

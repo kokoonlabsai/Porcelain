@@ -90,6 +90,30 @@ async function main() {
       });
     }
   }
+  // Sample shop products (no photos — the shop shows an elegant placeholder). Replace them under Admin → Products.
+  if (!(await db.products.findOne({}))) {
+    const now = new Date();
+    const products = [
+      ['Gentle Hydrating Cleanser', 'cleansers', 650, null, '150 ml', 'A soft, non-foaming cleanser that keeps the skin barrier intact.', 'All skin types · Sensitive', 'Massage onto damp skin morning and night, then rinse.', 'Glycerin, ceramides, panthenol', true],
+      ['Salicylic Acid Foaming Wash', 'cleansers', 720, 800, '100 ml', 'Clears pores and calms breakouts without stripping.', 'Oily · Acne-prone', 'Use once daily, at night. Start with alternate days.', 'Salicylic acid 2%, niacinamide', false],
+      ['Niacinamide 10% Serum', 'serums', 890, null, '30 ml', 'Evens tone, refines pores and balances oil.', 'All skin types', 'Two to three drops before moisturiser, morning or night.', 'Niacinamide 10%, zinc PCA', true],
+      ['Vitamin C Brightening Serum', 'serums', 1450, 1600, '30 ml', 'Antioxidant care for dull skin and pigmentation.', 'Dull skin · Pigmentation', 'Mornings, before sunscreen. Keep the bottle closed and cool.', 'Ascorbic acid, ferulic acid, vitamin E', true],
+      ['Ceramide Barrier Cream', 'moisturisers', 990, null, '50 g', 'A rich cream that repairs dry, irritated skin.', 'Dry · Sensitive', 'Apply generously after serums, morning and night.', 'Ceramides, cholesterol, squalane', false],
+      ['Oil-free Gel Moisturiser', 'moisturisers', 780, null, '50 g', 'Light hydration that never feels heavy.', 'Oily · Combination', 'Apply after serums, morning and night.', 'Hyaluronic acid, glycerin', false],
+      ['SPF 50 PA++++ Gel Sunscreen', 'sunscreen', 850, 950, '50 g', 'Invisible, non-greasy protection for Indian summers.', 'All skin types', 'Two finger-lengths for face and neck. Reapply every 3 hours outdoors.', 'Broad-spectrum UVA/UVB filters', true],
+      ['Tinted Mineral Sunscreen SPF 40', 'sunscreen', 1100, null, '50 g', 'A sheer tint that evens skin and blocks visible light.', 'Melasma · Sensitive', 'Apply as the last step of your morning routine.', 'Zinc oxide, iron oxides', false],
+      ['Azelaic Acid 10% Cream', 'treatments', 950, null, '30 g', 'Gently targets redness, acne marks and uneven tone.', 'Acne marks · Redness', 'A thin layer at night. Use as directed by your doctor.', 'Azelaic acid 10%', false],
+      ['Anti-hair-fall Scalp Serum', 'hair', 1250, 1400, '60 ml', 'A lightweight serum that supports stronger, fuller hair.', 'Thinning hair', 'Apply to a dry scalp at night and massage for a minute.', 'Peptides, caffeine, biotin', true],
+      ['Ketoconazole Anti-dandruff Shampoo', 'hair', 520, null, '100 ml', 'Controls flaking and itch from dandruff.', 'Dandruff', 'Leave on the scalp for 5 minutes, then rinse. Twice a week.', 'Ketoconazole 2%', false],
+      ['Urea 10% Body Lotion', 'body', 690, null, '200 ml', 'Softens rough, dry skin on arms, legs and heels.', 'Very dry skin', 'Apply after a shower while skin is still damp.', 'Urea 10%, lactic acid', false],
+    ];
+    await db.products.insertMany(products.map(([name, category, price, mrp, size, summary, skin_types, how_to_use, ingredients, featured]) => ({
+      slug: name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, ''),
+      name, brand: 'Porcelain Select', category, price, mrp, size, summary, description: summary, how_to_use, ingredients, skin_types,
+      stock: 25, active: true, featured, image: null, created_at: now, updated_at: now,
+    })));
+  }
+
   console.log('Demo data ready. Admin +91 90000 00001 / admin123 · Doctors 90000 00002, 90000 00004 / doctor123 · Reception 90000 00003 / reception123 · Patient 98111 11111 / patient123');
 }
 

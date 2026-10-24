@@ -289,3 +289,47 @@ test('admin edits a staff member’s name, phone and email; phone stays unique',
   assert.equal(ok.body.user.phone, '+919000000009');
   assert.ok(await login('9000000009', (await call('POST', `/api/admin/staff/${rec.id}/reset`, { token: admin })).body.password));
 });
+
+test('shop: admin adds products; customers order; stock is reserved and restored on cancel', async () => {
+  const bad = await call('POST', '/api/admin/products', { token: admin, body: { name: '', category: 'nope', price: 0 } });
+  assert.equal(bad.status, 422);
+  const made = await call('POST', '/api/admin/products', { token: admin, body: { name: 'Test Sunscreen SPF 50', category: 'sunscreen', price: 800, mrp: 900, size: '50 g', stock: 3 } });
+  assert.equal(made.status, 201);
+  const pid = made.body.product.id;
+  assert.equal((await call('POST', '/api/admin/products', { token: doctor, body: {} })).status, 403);
+
+  const list = (await call('GET', '/api/shop/products?category=sunscreen')).body.products;
+  assert.ok(list.some((p) => p.id === pid));
+  const one = await call('GET', `/api/shop/products/${made.body.product.slug}`);
+  assert.equal(one.body.product.price, 800);
+
+  const tooMany = await call('POST', '/api/shop/orders', { body: { name: 'Neha', phone: '9877777777', items: [{ product_id: pid, qty: 5 }] } });
+  assert.equal(tooMany.status, 409);
+  const noAddress = await call('POST', '/api/shop/orders', { body: { name: 'Neha', phone: '9877777777', fulfilment: 'delivery', items: [{ product_id: pid, qty: 1 }] } });
+  assert.equal(noAddress.status, 422);
+
+  // The price the browser sends is ignored.
+  const o = await call('POST', '/api/shop/orders', { body: { name: 'Neha', phone: '9877777777', fulfilment: 'delivery', address: '12 Lake View', city: 'Bhopal', pincode: '462016', items: [{ product_id: pid, qty: 2, price: 1 }] } });
+  assert.equal(o.status, 201);
+  assert.equal(o.body.order.subtotal, 1600);
+  assert.equal(o.body.order.delivery_fee, 0); // over the free-delivery threshold
+  assert.equal(o.body.order.payment, 'cod');
+  assert.match(o.body.order.number, /^PSC-[0-9A-F]{6}$/);
+  const after = (await call('GET', '/api/admin/products', { token: admin })).body.products.find((p) => p.id === pid);
+  assert.equal(after.stock, 1);
+
+  const open = (await call('GET', '/api/staff/orders?status=open', { token: reception })).body;
+  assert.ok(open.orders.some((x) => x.id === o.body.order.id));
+  const c = await call('PATCH', `/api/staff/orders/${o.body.order.id}`, { token: reception, body: { status: 'cancelled' } });
+  assert.equal(c.body.order.status, 'cancelled');
+  const restocked = (await call('GET', '/api/admin/products', { token: admin })).body.products.find((p) => p.id === pid);
+  assert.equal(restocked.stock, 3);
+
+  // Logged-in patients see their own orders.
+  const asha = await login('9811111111', 'secret1');
+  const mine = await call('POST', '/api/shop/orders', { token: asha, body: { items: [{ product_id: pid, qty: 1 }] } });
+  assert.equal(mine.status, 201);
+  assert.equal(mine.body.order.customer.name, 'Asha Rao');
+  assert.equal(mine.body.order.payment, 'pay_at_clinic');
+  assert.equal((await call('GET', '/api/me/orders', { token: asha })).body.orders.length, 1);
+});
