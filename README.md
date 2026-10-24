@@ -54,7 +54,6 @@ A web app for a dermatology clinic. Patients book online, see their prescription
 ## Run it locally
 
 ```bash
-cd clinic
 npm install                 # installs server + client
 npm run seed:demo           # optional demo data
 npm run build
@@ -74,7 +73,7 @@ For development, run `npm run dev:server` (API on :4000) and `npm run dev:client
 
 ## Hosting
 
-This uses the same cheap setup as Jellyfish: [Turso](https://turso.tech) for the database (free tier) and DigitalOcean App Platform for the API (~$5/month) plus a free static site. `.do/app.yaml` is ready to use. Photos are stored in the database, so the server keeps no files and survives redeploys.
+This uses a cheap setup: [Turso](https://turso.tech) for the database (free tier) and DigitalOcean App Platform for the API (~$5/month) plus a free static site. `.do/app.yaml` is ready to use. Photos are stored in the database, so the server keeps no files and survives redeploys.
 
 | Env var | |
 |---|---|

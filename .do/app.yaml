@@ -1,15 +1,15 @@
 # DigitalOcean App Platform spec: free static frontend + ~$5/month API container on one domain.
-# If this app moves to its own repo, change repo/branch and drop the "clinic/" prefix from the paths below.
+# Set repo below to your GitHub repo, then create the app from this file.
 name: derma-clinic
 region: blr
 
 static_sites:
   - name: web
     github:
-      repo: kokoonlabsai/Expense
+      repo: kokoonlabsai/derma-clinic
       branch: main
       deploy_on_push: true
-    source_dir: clinic/client
+    source_dir: client
     build_command: npm ci && npm run build
     output_dir: dist
     catchall_document: index.html
@@ -17,11 +17,11 @@ static_sites:
 services:
   - name: api
     github:
-      repo: kokoonlabsai/Expense
+      repo: kokoonlabsai/derma-clinic
       branch: main
       deploy_on_push: true
-    source_dir: clinic/server
-    dockerfile_path: clinic/server/Dockerfile
+    source_dir: server
+    dockerfile_path: server/Dockerfile
     http_port: 8080
     instance_count: 1
     instance_size_slug: apps-s-1vcpu-0.5gb
