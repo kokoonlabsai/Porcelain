@@ -1,5 +1,5 @@
 import { Link, useNavigate } from 'react-router-dom';
-import { ArrowRight, ArrowUpRight, MapPin, Phone, MessageCircle, Droplets, Leaf, Syringe, Zap, Sun, HelpCircle } from 'lucide-react';
+import { ArrowRight, ArrowUpRight, MapPin, Phone, MessageCircle, Droplets, Leaf, Syringe, Zap, Sun, HelpCircle, Stethoscope, MessagesSquare, ShieldCheck, Plus } from 'lucide-react';
 import { useApp, useLoad } from '../lib/store';
 import { api } from '../lib/api';
 import { useReveal } from '../lib/reveal';
@@ -24,12 +24,28 @@ const STEPS = [
   { t: 'Return', d: 'We remind you when it’s time.' },
 ];
 
-const STATS = [
-  { to: 2, suffix: '', label: 'Specialist doctors' },
-  { to: 1, suffix: ' min', label: 'To book online' },
-  { to: 24, suffix: '/7', label: 'Your records, online' },
-  { to: 0, suffix: '', label: 'Lost prescriptions' },
+const PRINCIPLES = [
+  { icon: Stethoscope, t: 'Diagnosis first', d: 'Every treatment starts with finding the cause.' },
+  { icon: MessagesSquare, t: 'Explained clearly', d: 'Your plan in plain words, with time for questions.' },
+  { icon: ShieldCheck, t: 'Only what you need', d: 'No packages, no pressure, no upselling.' },
 ];
+
+const FAQ = [
+  { q: 'How long is a consultation?', a: 'Plan for 20–30 minutes with the doctor. Procedures take longer — we’ll tell you when you book.' },
+  { q: 'Do I need an account to book?', a: 'No. Your name and phone number are enough. Set a password after booking to see your prescriptions online.' },
+  { q: 'What should I bring?', a: 'Any previous prescriptions, reports or the products you use. Photos of a rash that comes and goes help too.' },
+  { q: 'Where do I get my medicines?', a: 'From our pharmacy desk, right after your visit. Your prescription is already there — just give your name.' },
+  { q: 'Will I get my prescription in writing?', a: 'Yes — on your phone in your patient portal, by email if you share one, and printed if you like.' },
+  { q: 'How do follow-ups work?', a: 'The doctor sets your next-visit date. You’ll see it in your portal and get a reminder a few days before.' },
+];
+
+/** "2000+ | Patients treated" lines from clinic settings. A leading number counts up; anything else shows as is. */
+function parseHighlights(text = '') {
+  return text.split('\n').map((line) => line.split('|').map((p) => p.trim())).filter(([v, l]) => v && l).map(([value, label]) => {
+    const m = /^(\d+)(.*)$/.exec(value);
+    return m ? { label, to: Number(m[1]), suffix: m[2] } : { label, text: value };
+  });
+}
 
 const MARQUEE = ['Clinical dermatology', 'Acne & scars', 'Hair restoration', 'Pigmentation', 'Laser', 'Chemical peels', 'Skin boosters', 'PRP', 'Medi-facials'];
 
@@ -48,10 +64,10 @@ export default function Home() {
   useReveal();
   const brandWord = (settings.clinic_name || 'Porcelain').split(/\s+/)[0].toUpperCase();
   const doctors = [
-    { name: settings.doctor_name, cred: settings.doctor_credentials, bio: settings.doctor_bio },
-    { name: settings.doctor2_name, cred: settings.doctor2_credentials, bio: settings.doctor2_bio },
+    { name: settings.doctor_name, cred: settings.doctor_credentials, bio: settings.doctor_bio, tags: settings.doctor_tags },
+    { name: settings.doctor2_name, cred: settings.doctor2_credentials, bio: settings.doctor2_bio, tags: settings.doctor2_tags },
   ].filter((d) => d.name);
-  const stats = STATS.map((s) => (s.label === 'Specialist doctors' ? { ...s, to: doctors.length || 1, label: doctors.length === 1 ? 'Specialist doctor' : s.label } : s));
+  const highlights = parseHighlights(settings.highlights);
 
   return (
     <>
@@ -78,18 +94,35 @@ export default function Home() {
         <div className="track">{[...MARQUEE, ...MARQUEE].map((t, i) => <span key={i}>{t}</span>)}</div>
       </div>
 
-      {/* ---------- Statement + big numbers ---------- */}
+      {/* ---------- Why Porcelain: principles + highlights ---------- */}
       <section className="lux-section">
-        <div className="contain">
-          <h2 className="big-statement sr">Medicine first.<br /><em>Beauty,</em> naturally.</h2>
-          <div className="numbers mt-64">
-            {stats.map((s, i) => (
-              <div key={s.label} className="number sr" style={delay(i)}>
-                <div className="v"><CountUp to={s.to} suffix={s.suffix} /></div>
-                <div className="l">{s.label}</div>
-              </div>
-            ))}
+        <div className="contain why-grid">
+          <div>
+            <div className="eyebrow sr">Why {brandWord.charAt(0) + brandWord.slice(1).toLowerCase()}</div>
+            <h2 className="big-statement mt-16 sr">Medicine first.<br /><em>Beauty,</em> naturally.</h2>
+            <p className="sub sr">A doctor-led clinic for skin, hair and aesthetics — where results look like you, only healthier.</p>
+            <div className="principles mt-48">
+              {PRINCIPLES.map((p, i) => (
+                <div key={p.t} className="principle sr" style={delay(i, 100)}>
+                  <span className="principle-ico"><p.icon size={22} strokeWidth={1.7} /></span>
+                  <div>
+                    <div className="principle-t">{p.t}</div>
+                    <div className="principle-d">{p.d}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
+          {highlights.length > 0 && (
+            <div className="highlights sr">
+              {highlights.map((h) => (
+                <div key={h.label} className="highlight">
+                  <div className="v">{h.text ?? <CountUp to={h.to} suffix={h.suffix} />}</div>
+                  <div className="l">{h.label}</div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </section>
 
@@ -129,6 +162,12 @@ export default function Home() {
                     <h3>{d.name}</h3>
                     <div className="cred">{d.cred}</div>
                     {d.bio && <p>{d.bio}</p>}
+                    {d.tags && (
+                      <div className="doc-tags">
+                        {d.tags.split(/\s*[·,]\s*/).filter(Boolean).map((t) => <span key={t}>{t}</span>)}
+                      </div>
+                    )}
+                    <Link to="/book" className="caps-link mt-24">Book a visit <ArrowRight size={14} /></Link>
                   </div>
                 );
               })}
@@ -157,9 +196,28 @@ export default function Home() {
         </div>
       </section>
 
+      {/* ---------- First visit FAQ ---------- */}
+      <section className="lux-section">
+        <div className="contain faq-grid">
+          <div>
+            <h2 className="big-statement sr">Your first <em>visit.</em></h2>
+            <p className="sub sr">Everything people ask before they come in.</p>
+            <Link to="/book" className="btn primary lg mt-32 sr">Book a consultation</Link>
+          </div>
+          <div className="faq">
+            {FAQ.map((f, i) => (
+              <details key={f.q} className="faq-item sr" style={delay(i, 60)} open={i === 0}>
+                <summary>{f.q}<Plus className="faq-plus" size={22} /></summary>
+                <p>{f.a}</p>
+              </details>
+            ))}
+          </div>
+        </div>
+      </section>
+
       {/* ---------- Journal ---------- */}
       {journal.length > 0 && (
-        <section className="lux-section">
+        <section className="lux-section tinted">
           <div className="contain">
             <div className="row between wrap" style={{ alignItems: 'flex-end', gap: 24 }}>
               <h2 className="big-statement sr" style={{ margin: 0 }}>No <em>myths.</em></h2>

@@ -91,7 +91,7 @@ router.put(
   wrap(async (req, res) => {
     const b = req.body || {};
     const updates = Object.fromEntries(
-      Object.keys(DEFAULT_SETTINGS).filter((k) => b[k] !== undefined).map((k) => [k, String(b[k] ?? '').trim().slice(0, 500)])
+      Object.keys(DEFAULT_SETTINGS).filter((k) => b[k] !== undefined).map((k) => [k, String(b[k] ?? '').trim().slice(0, 1000)])
     );
     for (const [k, v] of Object.entries(updates)) {
       if (['booking_days_ahead', 'min_notice_minutes'].includes(k) && !/^\d{1,4}$/.test(v)) throw new HttpError(422, 'Use a whole number');

@@ -51,6 +51,10 @@ const DEFAULT_SETTINGS = {
   doctor2_name: 'Dr. Nitya Bajpai',
   doctor2_credentials: 'MBBS, Fellow in Aesthetic Medicine',
   doctor2_bio: 'Peels, lasers and skin boosters, with a light hand.',
+  doctor_tags: 'Acne · Hair loss · Pigmentation · Allergies',
+  doctor2_tags: 'Lasers · Peels · Skin boosters · Anti-ageing',
+  // One highlight per line: "value | label". A leading number counts up on the home page.
+  highlights: '2000+ | Patients treated\n7+ | Years of experience\nParis | Fellowship in aesthetic medicine\n2 | Specialist doctors',
   phone: '',
   whatsapp: '',
   email: '',

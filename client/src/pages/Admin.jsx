@@ -340,6 +340,9 @@ const SETTINGS_FIELDS = [
   ['doctor2_name', 'Second doctor’s name', 'Leave empty if there’s only one doctor'],
   ['doctor2_credentials', 'Second doctor’s qualifications'],
   ['doctor2_bio', 'Second doctor — one-line introduction'],
+  ['doctor_tags', 'Lead doctor — specialties', 'Separate with · or commas, e.g. Acne · Hair loss'],
+  ['doctor2_tags', 'Second doctor — specialties'],
+  ['highlights', 'Home page highlights', 'One per line as “value | label”, e.g. 2000+ | Patients treated'],
   ['phone', 'Clinic phone'],
   ['whatsapp', 'WhatsApp number', 'With country code, e.g. +91 98765 43210'],
   ['email', 'Clinic email'],
@@ -373,7 +376,7 @@ export function ClinicSettings() {
       <form className="card stack gap-16" onSubmit={save}>
         {SETTINGS_FIELDS.map(([k, label, hint]) => (
           <Field key={k} label={label} hint={hint}>
-            {['address', 'doctor_bio', 'doctor2_bio'].includes(k) ? <textarea className="input" rows={2} value={f[k]} onChange={(e) => setF({ ...f, [k]: e.target.value })} />
+            {['address', 'doctor_bio', 'doctor2_bio', 'highlights'].includes(k) ? <textarea className="input" rows={k === 'highlights' ? 5 : 2} value={f[k]} onChange={(e) => setF({ ...f, [k]: e.target.value })} />
               : <input className="input" value={f[k]} onChange={(e) => setF({ ...f, [k]: e.target.value })} inputMode={['booking_days_ahead', 'min_notice_minutes'].includes(k) ? 'numeric' : undefined} />}
           </Field>
         ))}
