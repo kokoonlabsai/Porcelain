@@ -34,20 +34,11 @@ async function visit(patientId, doctorId, date, v, items, dispensed) {
 
 async function main() {
   await ready;
-  await db.settings.updateOne({ _id: 'clinic' }, {
-    $set: {
-      clinic_name: 'Porcelain Skin Clinic',
-      city: 'Bhopal',
-      doctor_name: 'Dr. Mayank Bajpai',
-      doctor_credentials: 'MBBS, MD (Dermatology, Venereology & Leprosy)',
-      doctor_bio: 'Consultant dermatologist, dermatosurgeon and aesthetic physician.',
-      doctor_tags: 'Acne & scars · Pigmentation & melasma · Hair loss · Lasers · Botox & fillers',
-      doctor2_name: 'Dr. Nitya Bajpai',
-      doctor2_credentials: 'MBBS, Fellow in Aesthetic Medicine',
-      address: 'E-7/578, Arera Colony, Bhopal, Madhya Pradesh 462016',
-      maps_url: 'https://www.google.com/maps/search/?api=1&query=23.207751,77.4320633',
-    },
-  });
+  // The clinic's real details and hours, over whatever an earlier start stored.
+  const { DEFAULT_SETTINGS } = require('../src/db');
+  await db.settings.updateOne({ _id: 'clinic' }, { $set: { ...DEFAULT_SETTINGS } }, { upsert: true });
+  await db.availability.deleteMany({});
+  await db.availability.insertMany([0, 1, 2, 3, 5, 6].map((weekday) => ({ weekday, start_time: '12:00', end_time: '19:45', slot_minutes: 30, capacity: 1 })));
   await user('Clinic Admin', '+919000000001', 'admin', 'admin123');
   const doctor = await user('Dr. Mayank Bajpai', '+919000000002', 'doctor', 'doctor123');
   await user('Dr. Nitya Bajpai', '+919000000004', 'doctor', 'doctor123');

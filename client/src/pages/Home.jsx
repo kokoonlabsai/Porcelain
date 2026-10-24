@@ -1,5 +1,5 @@
 import { Link, useNavigate } from 'react-router-dom';
-import { ArrowRight, ArrowUpRight, MapPin, Phone, MessageCircle, Droplets, Leaf, Syringe, Zap, Sun, HelpCircle, Stethoscope, MessagesSquare, ShieldCheck, Plus } from 'lucide-react';
+import { ArrowRight, ArrowUpRight, MapPin, Phone, Mail, MessageCircle, Sparkles, FlaskConical, Leaf, Syringe, Zap, ScanFace, Stethoscope, MessagesSquare, ShieldCheck, Plus, Award } from 'lucide-react';
 import { useApp, useLoad } from '../lib/store';
 import { api } from '../lib/api';
 import { useReveal } from '../lib/reveal';
@@ -8,13 +8,14 @@ import { CAT_COLORS } from '../components/ui';
 import Facade from '../components/Facade';
 import CountUp from '../components/CountUp';
 
+/** The clinic's six treatment categories, each opening booking for the closest concern. */
 const TREATMENTS = [
-  { concern: 'skin', icon: Droplets, title: 'Skin', text: 'Acne, pigmentation, allergies' },
-  { concern: 'hair', icon: Leaf, title: 'Hair', text: 'Hair fall, thinning, scalp' },
-  { concern: 'procedure', icon: Syringe, title: 'Aesthetics', text: 'Boosters, anti-ageing' },
-  { concern: 'procedure', icon: Zap, title: 'Lasers & peels', text: 'Hair reduction, scars' },
-  { concern: 'wellness', icon: Sun, title: 'Skin wellness', text: 'Your routine, done right' },
-  { concern: 'other', icon: HelpCircle, title: 'Not sure?', text: 'Just tell the doctor' },
+  { concern: 'wellness', icon: Sparkles, title: 'Clinical facials', text: 'Medi-facials, HydraFacial, glow' },
+  { concern: 'procedure', icon: FlaskConical, title: 'Clinical peels', text: 'Acne, pigmentation, texture' },
+  { concern: 'hair', icon: Leaf, title: 'Hair', text: 'Hair fall, thinning, PRP' },
+  { concern: 'procedure', icon: Syringe, title: 'Injectables', text: 'Botox, fillers, skin boosters' },
+  { concern: 'procedure', icon: Zap, title: 'Lasers & tech', text: 'Laser hair reduction, resurfacing' },
+  { concern: 'skin', icon: ScanFace, title: 'Corrective treatments', text: 'Scars, melasma, moles' },
 ];
 
 const STEPS = [
@@ -25,9 +26,9 @@ const STEPS = [
 ];
 
 const PRINCIPLES = [
-  { icon: Stethoscope, t: 'Diagnosis first', d: 'Every treatment starts with finding the cause.' },
-  { icon: MessagesSquare, t: 'Explained clearly', d: 'Your plan in plain words, with time for questions.' },
-  { icon: ShieldCheck, t: 'Only what you need', d: 'No packages, no pressure, no upselling.' },
+  { icon: Stethoscope, t: 'Evidence-based', d: 'Scientifically sound care for clinical and aesthetic concerns.' },
+  { icon: MessagesSquare, t: 'Subtle, yet substantial', d: 'Minimally invasive tweakments. Nothing is ever overdone.' },
+  { icon: ShieldCheck, t: 'Global standards', d: 'Lasers and equipment at par with New York, London and Paris.' },
 ];
 
 const FAQ = [
@@ -47,7 +48,7 @@ function parseHighlights(text = '') {
   });
 }
 
-const MARQUEE = ['Clinical dermatology', 'Acne & scars', 'Hair restoration', 'Pigmentation', 'Laser', 'Chemical peels', 'Skin boosters', 'PRP', 'Medi-facials'];
+const MARQUEE = ['Clinical facials', 'Clinical peels', 'Hair', 'Injectables', 'Lasers & tech', 'Corrective treatments', 'Acne & scars', 'Pigmentation', 'Skin boosters'];
 
 /** Stagger for children revealed together. */
 const delay = (i, step = 80) => ({ transitionDelay: `${i * step}ms` });
@@ -64,8 +65,8 @@ export default function Home() {
   useReveal();
   const brandWord = (settings.clinic_name || 'Porcelain').split(/\s+/)[0].toUpperCase();
   const doctors = [
-    { name: settings.doctor_name, cred: settings.doctor_credentials, bio: settings.doctor_bio, tags: settings.doctor_tags },
-    { name: settings.doctor2_name, cred: settings.doctor2_credentials, bio: settings.doctor2_bio, tags: settings.doctor2_tags },
+    { name: settings.doctor_name, role: settings.doctor_role, cred: settings.doctor_credentials, exp: settings.doctor_experience, bio: settings.doctor_bio, tags: settings.doctor_tags, awards: settings.doctor_awards },
+    { name: settings.doctor2_name, role: settings.doctor2_role, cred: settings.doctor2_credentials, exp: settings.doctor2_experience, bio: settings.doctor2_bio, tags: settings.doctor2_tags, awards: settings.doctor2_awards },
   ].filter((d) => d.name);
   const highlights = parseHighlights(settings.highlights);
 
@@ -75,12 +76,12 @@ export default function Home() {
       <section className="lux-hero">
         <div className="contain grid g-2 hero-grid">
           <div className="hero-copy">
-            <div className="eyebrow reveal">{settings.clinic_name}{settings.city ? ` · ${settings.city}` : ''}</div>
+            <div className="eyebrow reveal">Skin · Hair · Wellness{settings.city ? ` · ${settings.city}` : ''}</div>
             <h1 className="mt-24">
               <span className="word reveal d1">The art of</span>{' '}
               <span className="word reveal d2"><em>healthy</em> skin.</span>
             </h1>
-            <p className="lead reveal d3">Dermatology and aesthetics, by doctors who explain.</p>
+            <p className="lead reveal d3">Evidence-based dermatology and aesthetics. Subtle, yet substantial results.</p>
             <div className="row wrap reveal d3" style={{ gap: 14, marginTop: 40 }}>
               <Link to="/book" className="btn primary lg">Book a consultation</Link>
               <a href="#treatments" className="btn ghost lg">Treatments <ArrowRight size={16} /></a>
@@ -100,7 +101,7 @@ export default function Home() {
           <div>
             <div className="eyebrow sr">Why {brandWord.charAt(0) + brandWord.slice(1).toLowerCase()}</div>
             <h2 className="big-statement mt-16 sr">Medicine first.<br /><em>Beauty,</em> naturally.</h2>
-            <p className="sub sr">A doctor-led clinic for skin, hair and aesthetics — where results look like you, only healthier.</p>
+            <p className="sub sr">Aesthetic medicine is as much an art as a science. Nothing is ever overdone — yet every feature is taken into account.</p>
             <div className="principles mt-48">
               {PRINCIPLES.map((p, i) => (
                 <div key={p.t} className="principle sr" style={delay(i, 100)}>
@@ -153,7 +154,7 @@ export default function Home() {
             <div className="section-intro">
               <div className="eyebrow sr">Your doctors</div>
               <h2 className="big-statement mt-16 sr">In <em>expert</em> hands.</h2>
-              <p className="sub sr">{doctors.length === 2 ? 'Two specialists. One standard of care.' : 'Specialist care, from consultation to follow-up.'}</p>
+              <p className="sub sr">{doctors.length === 2 ? 'A dynamic duo bringing global standards of care to Bhopal.' : 'Specialist care, from consultation to follow-up.'}</p>
             </div>
             <div className="doctor-grid mt-48">
               {doctors.map((d, i) => {
@@ -161,7 +162,9 @@ export default function Home() {
                 return (
                   <div key={d.name} className="doctor-card sr" style={delay(i, 120)}>
                     <div className="arch">{initial}</div>
+                    {d.exp && <div className="doc-exp">{d.exp}</div>}
                     <h3>{d.name}</h3>
+                    {d.role && <div className="doc-role">{d.role}</div>}
                     <div className="cred">{d.cred}</div>
                     {d.bio && <p>{d.bio}</p>}
                     {d.tags && (
@@ -169,11 +172,27 @@ export default function Home() {
                         {d.tags.split(/\s*[·,]\s*/).filter(Boolean).map((t) => <span key={t}>{t}</span>)}
                       </div>
                     )}
+                    {d.awards && (
+                      <ul className="doc-awards">
+                        {d.awards.split('\n').map((a) => a.trim()).filter(Boolean).map((a) => <li key={a}><Award size={16} />{a}</li>)}
+                      </ul>
+                    )}
                     <Link to="/book" className="caps-link mt-24">Book a visit <ArrowRight size={14} /></Link>
                   </div>
                 );
               })}
             </div>
+          </div>
+        </section>
+      )}
+
+      {/* ---------- Message from the founders ---------- */}
+      {settings.founders_quote && (
+        <section className="lux-section quote-section">
+          <div className="contain center">
+            <div className="eyebrow sr">A message from our founders</div>
+            <blockquote className="founders-quote sr">“{settings.founders_quote}”</blockquote>
+            <div className="quote-by sr">{doctors.map((d) => d.name).join(' & ')}</div>
           </div>
         </section>
       )}
@@ -251,7 +270,8 @@ export default function Home() {
             </div>
             <div className="stack gap-10 mt-32 visit-contact">
               {settings.address && <div className="row top gap-6"><MapPin size={18} style={{ marginTop: 3 }} /><span>{settings.address}</span></div>}
-              {settings.phone && <a className="row gap-6" href={`tel:${settings.phone}`}><Phone size={18} />{settings.phone}</a>}
+              {settings.phone && <a className="row gap-6" href={`tel:${settings.phone.replace(/[^\d+]/g, '')}`}><Phone size={18} />{settings.phone}</a>}
+              {settings.email && <a className="row gap-6" href={`mailto:${settings.email}`}><Mail size={18} />{settings.email}</a>}
               {settings.whatsapp && <a className="row gap-6" href={`https://wa.me/${settings.whatsapp.replace(/\D/g, '')}`} target="_blank" rel="noreferrer"><MessageCircle size={18} />WhatsApp</a>}
             </div>
           </div>

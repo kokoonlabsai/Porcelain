@@ -811,3 +811,14 @@ body { font-size: 17px; color: var(--ink); }
 .doctors-band .doctor-card p { color: rgba(255, 255, 255, 0.85); }
 .doctors-band .doc-tags span { background: transparent; border-color: rgba(255, 255, 255, 0.22); color: rgba(255, 255, 255, 0.9); }
 .doctors-band .caps-link { color: #e2cf9f; }
+
+/* Doctor details & founders' message */
+.doc-exp { display: inline-block; margin-bottom: 14px; padding: 5px 12px; font-size: 12px; font-weight: 600; letter-spacing: 0.16em; text-transform: uppercase; color: var(--navy-deep); background: #e2cf9f; }
+.doc-role { margin-top: 6px; font-size: 16px; font-weight: 500; color: rgba(255, 255, 255, 0.92); }
+.doctor-card .cred { margin-top: 10px; }
+.doc-awards { list-style: none; padding: 0; margin: 22px auto 0; display: grid; gap: 8px; max-width: 360px; text-align: left; }
+.doc-awards li { display: flex; gap: 10px; align-items: flex-start; font-size: 15px; color: rgba(255, 255, 255, 0.88); }
+.doc-awards svg { flex-shrink: 0; margin-top: 2px; color: #e2cf9f; }
+.quote-section { background: var(--bg); }
+.founders-quote { margin: 28px auto 0; max-width: 980px; font-family: var(--serif); font-style: italic; font-weight: 500; font-size: clamp(30px, 4vw, 52px); line-height: 1.2; color: var(--ink); }
+.quote-by { margin-top: 28px; font-size: 14px; font-weight: 600; letter-spacing: 0.2em; text-transform: uppercase; color: var(--brand); }

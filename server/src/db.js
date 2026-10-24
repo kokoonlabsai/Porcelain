@@ -43,32 +43,38 @@ const contains = (s) => new RegExp(String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$
 
 const DEFAULT_SETTINGS = {
   clinic_name: 'Porcelain Skin Clinic',
-  tagline: 'Dermatology and aesthetic medicine, by doctors who explain',
+  tagline: 'Evidence-based dermatology and aesthetics. Subtle, yet substantial results',
   city: 'Bhopal',
   doctor_name: 'Dr. Mayank Bajpai',
+  doctor_role: 'Founder & Chief Dermatologist',
   doctor_credentials: 'MBBS, MD (Dermatology, Venereology & Leprosy)',
-  doctor_bio: 'Consultant dermatologist, dermatosurgeon and aesthetic physician.',
+  doctor_experience: '10+ years',
+  doctor_bio: 'ECFMG-certified, with clinical experience at Mount Sinai Beth Israel, New York. MD from MGM Medical College & MY Hospital, Indore.',
+  doctor_tags: 'Acne & scars · Pigmentation · Hair loss · Lasers · Injectables',
+  // One per line, shown under the doctor's card.
+  doctor_awards: 'Member, IADVL\n1st prize, award paper — Cuticon Bhopal 2022\nQuiz winner — Cuticon Gwalior 2022',
   doctor2_name: 'Dr. Nitya Bajpai',
-  doctor2_credentials: 'MBBS, Fellow in Aesthetic Medicine',
-  doctor2_bio: 'Peels, lasers and skin boosters, with a light hand.',
-  doctor_tags: 'Acne & scars · Pigmentation & melasma · Hair loss · Lasers · Botox & fillers',
-  doctor2_tags: 'Lasers · Peels · Skin boosters · Anti-ageing',
+  doctor2_role: 'Co-founder & Medical Director',
+  doctor2_credentials: 'MBBS, Fellowship in Aesthetic Medicine',
+  doctor2_experience: '5+ years',
+  doctor2_bio: 'Curates Porcelain’s treatments and lasers with experts worldwide — global standards, here in Bhopal.',
+  doctor2_tags: 'Clinical facials · Peels · Lasers · Injectables · Skin boosters',
+  doctor2_awards: '',
+  founders_quote: 'Our products, technologies and techniques are at par with international standards — and we hope to make Bhopal one of the world’s great cities for skin care.',
   // One highlight per line: "value | label". A leading number counts up on the home page.
-  highlights: '2000+ | Patients treated\n7+ | Years of experience\nParis | Fellowship in aesthetic medicine\n2 | Specialist doctors',
-  phone: '',
+  highlights: '2000+ | Patients treated\n10+ | Years in dermatology\nNew York | Clinical experience, Mount Sinai\nParis | Fellowship in aesthetic medicine',
+  phone: '+91 6268-440839',
   whatsapp: '',
-  email: '',
-  address: '',
-  maps_url: '',
+  email: 'touch@porcelainskinclinic.com',
+  address: 'E-7/578, Arera Colony, Bhopal, Madhya Pradesh 462016',
+  maps_url: 'https://www.google.com/maps/search/?api=1&query=Porcelain+Skin+Clinic+Arera+Colony+Bhopal',
+  instagram: 'https://www.instagram.com/porcelainskinclinic/',
   booking_days_ahead: '30',
   min_notice_minutes: '60',
 };
 
-/** Monday–Saturday 10:00–13:00 and 16:00–19:00, 30-minute slots. Admin can change it. */
-const DEFAULT_HOURS = [1, 2, 3, 4, 5, 6].flatMap((weekday) => [
-  { weekday, start_time: '10:00', end_time: '13:00', slot_minutes: 30, capacity: 1 },
-  { weekday, start_time: '16:00', end_time: '19:00', slot_minutes: 30, capacity: 1 },
-]);
+/** Every day except Thursday, 12:00 noon – 7:45 PM, 30-minute slots. Admin can change it. */
+const DEFAULT_HOURS = [0, 1, 2, 3, 5, 6].map((weekday) => ({ weekday, start_time: '12:00', end_time: '19:45', slot_minutes: 30, capacity: 1 }));
 
 /** Every user document has the same fields, so queries never trip over missing ones. */
 function newUser(fields) {

@@ -335,13 +335,21 @@ const SETTINGS_FIELDS = [
   ['tagline', 'Tagline', 'Shown on the home page'],
   ['city', 'City', 'Shown on the home page'],
   ['doctor_name', 'Lead doctor’s name'],
+  ['doctor_role', 'Lead doctor’s role', 'e.g. Founder & Chief Dermatologist'],
+  ['doctor_experience', 'Lead doctor’s experience', 'e.g. 10+ years'],
   ['doctor_credentials', 'Lead doctor’s qualifications', 'Printed on prescriptions'],
   ['doctor_bio', 'Lead doctor — one-line introduction'],
   ['doctor2_name', 'Second doctor’s name', 'Leave empty if there’s only one doctor'],
+  ['doctor2_role', 'Second doctor’s role'],
+  ['doctor2_experience', 'Second doctor’s experience'],
   ['doctor2_credentials', 'Second doctor’s qualifications'],
   ['doctor2_bio', 'Second doctor — one-line introduction'],
   ['doctor_tags', 'Lead doctor — specialties', 'Separate with · or commas, e.g. Acne · Hair loss'],
   ['doctor2_tags', 'Second doctor — specialties'],
+  ['doctor_awards', 'Lead doctor — awards & memberships', 'One per line'],
+  ['doctor2_awards', 'Second doctor — awards & memberships', 'One per line'],
+  ['founders_quote', 'Message from the founders', 'Shown as a large quote on the home page. Leave empty to hide it'],
+  ['instagram', 'Instagram link'],
   ['highlights', 'Home page highlights', 'One per line as “value | label”, e.g. 2000+ | Patients treated'],
   ['phone', 'Clinic phone'],
   ['whatsapp', 'WhatsApp number', 'With country code, e.g. +91 98765 43210'],
@@ -376,7 +384,7 @@ export function ClinicSettings() {
       <form className="card stack gap-16" onSubmit={save}>
         {SETTINGS_FIELDS.map(([k, label, hint]) => (
           <Field key={k} label={label} hint={hint}>
-            {['address', 'doctor_bio', 'doctor2_bio', 'highlights'].includes(k) ? <textarea className="input" rows={k === 'highlights' ? 5 : 2} value={f[k]} onChange={(e) => setF({ ...f, [k]: e.target.value })} />
+            {['address', 'doctor_bio', 'doctor2_bio', 'highlights', 'doctor_awards', 'doctor2_awards', 'founders_quote'].includes(k) ? <textarea className="input" rows={['highlights', 'doctor_awards', 'doctor2_awards', 'founders_quote'].includes(k) ? 4 : 2} value={f[k]} onChange={(e) => setF({ ...f, [k]: e.target.value })} />
               : <input className="input" value={f[k]} onChange={(e) => setF({ ...f, [k]: e.target.value })} inputMode={['booking_days_ahead', 'min_notice_minutes'].includes(k) ? 'numeric' : undefined} />}
           </Field>
         ))}

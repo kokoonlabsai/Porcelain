@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link, NavLink, Outlet, useNavigate } from 'react-router-dom';
 import {
-  Home, CalendarPlus, ClipboardList, CalendarDays, BookOpen, UserRound, LogOut, Users, Pill, CalendarClock, Settings, Newspaper, UserCog, LayoutDashboard, KeyRound, MapPin, Phone, MessageCircle,
+  Mail, Home, CalendarPlus, ClipboardList, CalendarDays, BookOpen, UserRound, LogOut, Users, Pill, CalendarClock, Settings, Newspaper, UserCog, LayoutDashboard, KeyRound, MapPin, Phone, MessageCircle,
 } from 'lucide-react';
 import { useApp } from '../lib/store';
 import { api } from '../lib/api';
@@ -49,8 +49,15 @@ export function PublicLayout() {
           <div className="stack gap-6">
             <div className="strong">Visit</div>
             {settings.address && <div className="row top gap-6"><MapPin size={16} style={{ marginTop: 3 }} /><span>{settings.address}</span></div>}
-            {settings.phone && <a className="row gap-6" href={`tel:${settings.phone}`}><Phone size={16} />{settings.phone}</a>}
+            {settings.phone && <a className="row gap-6" href={`tel:${settings.phone.replace(/[^\d+]/g, '')}`}><Phone size={16} />{settings.phone}</a>}
+            {settings.email && <a className="row gap-6" href={`mailto:${settings.email}`}><Mail size={16} />{settings.email}</a>}
             {settings.whatsapp && <a className="row gap-6" href={`https://wa.me/${settings.whatsapp.replace(/\D/g, '')}`} target="_blank" rel="noreferrer"><MessageCircle size={16} />WhatsApp</a>}
+            {settings.instagram && (
+              <a className="row gap-6" href={settings.instagram} target="_blank" rel="noreferrer">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="5" /><circle cx="12" cy="12" r="4" /><circle cx="17.5" cy="6.5" r="0.8" fill="currentColor" /></svg>
+                Instagram
+              </a>
+            )}
             {settings.maps_url && <a className="link" href={settings.maps_url} target="_blank" rel="noreferrer">Directions</a>}
           </div>
           <div className="stack gap-6">
