@@ -466,7 +466,7 @@ body { font-size: 15.5px; font-weight: 400; letter-spacing: 0.005em; }
 .nav-links a { border-radius: 0; font-size: 11.5px; font-weight: 500; letter-spacing: 0.2em; text-transform: uppercase; padding: 8px 12px; color: var(--ink-2); }
 .nav-links a:hover { background: none; color: var(--brand); }
 .nav-links a.active { background: none; color: var(--brand); box-shadow: inset 0 -1px 0 var(--clay); }
-.footer { background: var(--navy-deep); color: rgba(255, 255, 255, 0.62); border-top: 0; margin-top: 0; padding: 72px 0 110px; }
+.footer { background: var(--navy-deep); color: rgba(255, 255, 255, 0.8); border-top: 0; margin-top: 0; padding: 72px 0 110px; }
 .footer .logo { color: #fff; }
 .footer .logo .wordmark small { color: rgba(255, 255, 255, 0.5); }
 .footer .brand-mark { background: transparent; border: 1px solid rgba(255, 255, 255, 0.3); }
@@ -525,7 +525,8 @@ body { font-size: 15.5px; font-weight: 400; letter-spacing: 0.005em; }
 .navy-band .btn:hover { border-color: #fff; background: rgba(255, 255, 255, 0.06); }
 .navy-band .btn.light { background: #f3eee4; color: var(--brand); border-color: #f3eee4; }
 .navy-band .btn.light:hover { background: #fff; }
-.awning { height: 22px; background: repeating-linear-gradient(90deg, var(--brand) 0 40px, var(--navy-deep) 40px 80px); clip-path: polygon(0 0, 100% 0, 100% 60%, 97.5% 100%, 95% 60%, 92.5% 100%, 90% 60%, 87.5% 100%, 85% 60%, 82.5% 100%, 80% 60%, 77.5% 100%, 75% 60%, 72.5% 100%, 70% 60%, 67.5% 100%, 65% 60%, 62.5% 100%, 60% 60%, 57.5% 100%, 55% 60%, 52.5% 100%, 50% 60%, 47.5% 100%, 45% 60%, 42.5% 100%, 40% 60%, 37.5% 100%, 35% 60%, 32.5% 100%, 30% 60%, 27.5% 100%, 25% 60%, 22.5% 100%, 20% 60%, 17.5% 100%, 15% 60%, 12.5% 100%, 10% 60%, 7.5% 100%, 5% 60%, 2.5% 100%, 0 60%); }
+.awning { height: 14px; background: radial-gradient(circle at 12px 14px, var(--brand) 11.5px, transparent 12px) repeat-x; background-size: 24px 14px; position: absolute; top: -14px; left: 0; right: 0; }
+.navy-band { position: relative; }
 .journal-card { display: block; padding: 30px 0; border-top: 1px solid var(--line-strong); }
 .journal-card .k { font-size: 11px; letter-spacing: 0.24em; text-transform: uppercase; color: var(--clay); font-weight: 500; }
 .journal-card h3 { font-family: var(--serif); font-weight: 500; font-size: 28px; line-height: 1.15; margin-top: 12px; transition: color 0.2s; }
@@ -562,3 +563,92 @@ body { font-size: 15.5px; font-weight: 400; letter-spacing: 0.005em; }
   .marquee .track { font-size: 19px; }
 }
 .slot.on, .slot.on:hover:not(:disabled) { color: #fff; border-color: var(--brand); }
+
+/* ================= Readability, whitespace & motion ================= */
+:root { --muted: #565c6c; --faint: #8c909c; --ink-2: #2f3648; --brass-text: #85683a; }
+body { font-size: 16px; }
+.eyebrow { color: var(--brass-text); font-size: 11.5px; font-weight: 600; }
+.muted { color: var(--muted); }
+.lux-section { padding: 140px 0; }
+.lux-section.tinted { background: var(--surface-2); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+.lux-title { font-size: clamp(40px, 5.6vw, 72px); font-weight: 400; color: var(--ink); }
+.lux-lead { font-size: 19px; font-weight: 400; color: var(--ink-2); line-height: 1.7; }
+.lux-hero h1 { font-size: clamp(54px, 8vw, 112px); }
+.lux-hero h1 .word { display: inline-block; }
+.lux-hero .lead { font-size: 20px; font-weight: 400; color: var(--ink-2); max-width: 420px; margin-top: 28px; }
+.mt-48 { margin-top: 48px; } .mt-64 { margin-top: 64px; } .gap-10 { gap: 10px; }
+.caps-link { display: inline-flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 600; letter-spacing: 0.2em; text-transform: uppercase; color: var(--brand); }
+.caps-link:hover svg { transform: translateX(3px); }
+.caps-link svg { transition: transform 0.2s; }
+
+.stats-row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); max-width: 760px; margin-left: auto; margin-right: auto; border-top: 1px solid var(--line-strong); }
+.stats-row > div { padding: 28px 8px 0; }
+.stat-v { font-family: var(--serif); font-size: clamp(40px, 5vw, 60px); color: var(--brand); line-height: 1; }
+.stat-l { margin-top: 10px; font-size: 13px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); font-weight: 500; }
+
+.doctor-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 48px; }
+.doctor-card { text-align: center; padding: 48px 24px; border: 1px solid var(--line-strong); background: var(--surface); transition: transform 0.4s ease, box-shadow 0.4s ease; }
+.doctor-card:hover { transform: translateY(-4px); box-shadow: var(--shadow); }
+.doctor-card .arch { width: 150px; height: 192px; margin: 0 auto 28px; border-radius: 75px 75px 2px 2px; background: var(--brand); color: #f3eee4; display: flex; align-items: center; justify-content: center; font-family: var(--serif); font-size: 64px; font-style: italic; position: relative; }
+.doctor-card .arch::after { content: ''; position: absolute; inset: 9px; border: 1px solid rgba(255, 255, 255, 0.3); border-radius: 66px 66px 0 0; }
+.doctor-card h3 { font-family: var(--serif); font-weight: 500; font-size: 34px; }
+.doctor-card .cred { margin-top: 8px; font-size: 11.5px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--brass-text); font-weight: 600; }
+.doctor-card p { margin-top: 18px; font-size: 17px; color: var(--ink-2); max-width: 320px; margin-left: auto; margin-right: auto; }
+
+.treatment { padding: 34px 6px; }
+.treatment .no { font-size: 22px; color: var(--brass-text); }
+.treatment h3 { font-size: clamp(28px, 3.2vw, 40px); }
+.treatment p { font-size: 15px; color: var(--muted); font-weight: 400; letter-spacing: 0.02em; }
+.treatment:hover h3 { color: var(--brand); }
+
+.ritual-row { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 32px; }
+.ritual { text-align: center; padding: 36px 12px 0; border-top: 1px solid var(--brand); }
+.ritual .n { font-size: 30px; color: var(--brass-text); }
+.ritual h3 { font-size: 32px; margin-top: 14px; }
+.ritual p { color: var(--muted); font-weight: 400; font-size: 16px; margin-top: 10px; }
+
+.journal-card { padding: 34px 0 0; }
+.journal-card .k { color: var(--brass-text); font-weight: 600; }
+.journal-card h3 { font-size: 30px; }
+
+.navy-band .lux-lead { color: rgba(255, 255, 255, 0.88); }
+.navy-band .eyebrow { color: #e2cf9f; }
+.visit-contact { color: rgba(255, 255, 255, 0.9); font-size: 16px; }
+.hours-table .row { padding: 18px 0; border-bottom: 1px solid rgba(255, 255, 255, 0.18); }
+.marquee .track { color: var(--ink-2); }
+
+@media (max-width: 860px) {
+  .lux-section { padding: 88px 0; }
+  .ritual-row { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 40px 20px; }
+}
+@media (max-width: 620px) {
+  .stat-l { font-size: 10.5px; letter-spacing: 0.1em; }
+  .ritual h3 { font-size: 26px; }
+  .doctor-grid { gap: 20px; }
+  .lux-hero .lead { font-size: 18px; }
+}
+
+/* Scroll reveal: only hidden once JS has switched it on, so content never disappears */
+.sr-on .sr { opacity: 0; transform: translateY(26px); transition: opacity 0.9s cubic-bezier(0.2, 0.7, 0.2, 1), transform 0.9s cubic-bezier(0.2, 0.7, 0.2, 1); }
+.sr-on .sr.in { opacity: 1; transform: none; }
+
+/* The facade comes to life */
+.facade .f-part { animation: f-rise 1s cubic-bezier(0.2, 0.7, 0.2, 1) both; }
+.facade .f-4 { animation-delay: 0.1s; }
+.facade .f-3 { animation-delay: 0.3s; }
+.facade .f-2 { animation-delay: 0.5s; }
+.facade .f-1 { animation-delay: 0.7s; }
+@keyframes f-rise { from { opacity: 0; transform: translateY(18px); } to { opacity: 1; transform: none; } }
+.facade .f-door { transform-box: fill-box; transform-origin: right center; animation: f-door 1.4s cubic-bezier(0.5, 0, 0.2, 1) 1.6s both; }
+@keyframes f-door { from { transform: scaleX(1); } to { transform: scaleX(0.18); } }
+.facade .f-glow { animation: f-glow 5s ease-in-out infinite; }
+@keyframes f-glow { 0%, 100% { opacity: 0.45; } 50% { opacity: 0.9; } }
+.facade .f-flicker { animation: f-flicker 3.2s ease-in-out infinite; }
+@keyframes f-flicker { 0%, 100% { opacity: 0.75; } 40% { opacity: 1; } 60% { opacity: 0.85; } }
+.facade .f-sway { transform-box: fill-box; transform-origin: 50% 100%; animation: f-sway 6s ease-in-out infinite; }
+@keyframes f-sway { 0%, 100% { transform: rotate(-1.6deg); } 50% { transform: rotate(1.6deg); } }
+.facade-wrap { transition: transform 0.6s ease; }
+@media (prefers-reduced-motion: reduce) {
+  .facade .f-part, .facade .f-glow, .facade .f-flicker, .facade .f-sway { animation: none; }
+  .facade .f-door { animation: none; transform: scaleX(0.18); }
+}
