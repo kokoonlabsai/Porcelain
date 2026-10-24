@@ -148,10 +148,12 @@ export default function Home() {
 
       {/* ---------- Doctors ---------- */}
       {doctors.length > 0 && (
-        <section className="lux-section">
+        <section className="lux-section doctors-band">
           <div className="contain">
             <div className="section-intro">
-              <h2 className="big-statement sr">In <em>expert</em> hands.</h2>
+              <div className="eyebrow sr">Your doctors</div>
+              <h2 className="big-statement mt-16 sr">In <em>expert</em> hands.</h2>
+              <p className="sub sr">{doctors.length === 2 ? 'Two specialists. One standard of care.' : 'Specialist care, from consultation to follow-up.'}</p>
             </div>
             <div className="doctor-grid mt-48">
               {doctors.map((d, i) => {

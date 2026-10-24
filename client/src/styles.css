@@ -792,3 +792,22 @@ body { font-size: 17px; color: var(--ink); }
   .faq-item summary { font-size: 18px; padding: 20px 0; }
   .faq-item p { padding-right: 0; }
 }
+
+/* Doctors: a deep navy band so the page changes colour as you scroll */
+.doctors-band { position: relative; overflow: hidden; color: #fff;
+  background: radial-gradient(70% 60% at 85% 10%, rgba(226, 207, 159, 0.14) 0%, transparent 60%), radial-gradient(60% 70% at 0% 100%, rgba(43, 68, 130, 0.55) 0%, transparent 60%), var(--navy-deep); }
+.doctors-band::after { content: 'P'; position: absolute; right: -2%; bottom: -18%; font-family: var(--serif); font-style: italic; font-size: clamp(320px, 42vw, 640px); line-height: 1; color: rgba(255, 255, 255, 0.035); pointer-events: none; }
+.doctors-band .contain { position: relative; z-index: 1; }
+.doctors-band .eyebrow { color: #e2cf9f; }
+.doctors-band .big-statement { color: #fff; }
+.doctors-band .big-statement em { color: #e2cf9f; }
+.doctors-band .sub { color: rgba(255, 255, 255, 0.85); }
+.doctors-band .doctor-card { background: rgba(255, 255, 255, 0.04); border-color: rgba(255, 255, 255, 0.16); backdrop-filter: blur(2px); }
+.doctors-band .doctor-card:hover { background: rgba(255, 255, 255, 0.07); border-color: rgba(226, 207, 159, 0.6); box-shadow: 0 30px 60px -30px rgba(0, 0, 0, 0.6); }
+.doctors-band .doctor-card .arch { background: #f3eee4; color: var(--brand); }
+.doctors-band .doctor-card .arch::after { border-color: rgba(31, 50, 100, 0.25); }
+.doctors-band .doctor-card h3 { color: #fff; }
+.doctors-band .doctor-card .cred { color: #e2cf9f; }
+.doctors-band .doctor-card p { color: rgba(255, 255, 255, 0.85); }
+.doctors-band .doc-tags span { background: transparent; border-color: rgba(255, 255, 255, 0.22); color: rgba(255, 255, 255, 0.9); }
+.doctors-band .caps-link { color: #e2cf9f; }
