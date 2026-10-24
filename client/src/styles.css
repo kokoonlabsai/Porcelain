@@ -1041,3 +1041,42 @@ button.caps-link { background: none; border: 0; padding: 0; cursor: pointer; }
   .article-card { padding: 30px 24px 26px; }
   .article-card h3 { margin-top: 20px; font-size: 24px; }
 }
+
+/* More breathing room: shop cards, app cards and grids */
+.grid { gap: 22px; }
+.card { padding: 30px; }
+.card.tight { padding: 20px; }
+.stat { padding: 24px 26px; }
+.card-title + .small, .card-title + p { margin-top: 6px; }
+
+.product-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 36px 32px; }
+.product-body { padding: 28px 28px 30px; }
+.product-kicker { font-size: 12.5px; letter-spacing: 0.16em; }
+.product-name { margin-top: 12px; font-size: 22px; line-height: 1.25; }
+.product-card .product-body > .row.between { margin-top: 24px; padding-top: 22px; border-top: 1px solid var(--line); }
+.price b { font-size: 21px; }
+.add-btn { height: 42px; padding: 0 18px; }
+.product-flag { top: 18px; left: 18px; padding: 6px 12px; }
+.related-grid, .product-page .product-grid { margin-top: 32px; }
+
+@media (min-width: 1500px) { .product-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+@media (max-width: 860px) { .product-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; } }
+@media (max-width: 620px) {
+  .grid { gap: 16px; }
+  .card { padding: 22px; }
+  .stat { padding: 18px 20px; }
+  .product-body { padding: 16px 14px 18px; }
+  .product-name { margin-top: 8px; font-size: 17px; }
+  .product-card .product-body > .row.between { margin-top: 16px; padding-top: 14px; }
+  .price b { font-size: 17px; }
+  .product-flag { top: 10px; left: 10px; padding: 4px 8px; font-size: 10px; }
+}
+.list-item { padding: 18px 4px; gap: 16px; }
+.summary-line { padding: 16px 0; gap: 14px; }
+.page { padding: 40px 40px 110px; }
+.page-head { margin-bottom: 32px; }
+@media (max-width: 860px) { .page { padding: 24px 20px 120px; } }
+@media (max-width: 620px) { .list-item { padding: 14px 2px; } .page { padding: 22px 16px 120px; } .page-head { margin-bottom: 22px; } }
+.article-card .ac-meta { flex-wrap: wrap; row-gap: 6px; }
+.article-card .ac-meta > span { white-space: nowrap; }
+.g-2.article-grid .article-card { padding: 34px 32px 30px; }
