@@ -274,3 +274,18 @@ test('malformed ids are a clean 404, not a crash', async () => {
   assert.equal((await call('GET', '/api/staff/visits/123', { token: admin })).status, 404);
   assert.equal((await call('POST', '/api/appointments/xyz/claim', { body: { phone: '9811111111', password: 'secret1' } })).status, 404);
 });
+
+test('admin edits a staff member’s name, phone and email; phone stays unique', async () => {
+  const staff = (await call('GET', '/api/admin/staff', { token: admin })).body.staff;
+  const doc = staff.find((u) => u.role === 'doctor');
+  const rec = staff.find((u) => u.role === 'reception');
+  const dup = await call('PATCH', `/api/admin/staff/${rec.id}`, { token: admin, body: { phone: doc.phone } });
+  assert.equal(dup.status, 409);
+  assert.ok(dup.body.details.phone);
+  const bad = await call('PATCH', `/api/admin/staff/${rec.id}`, { token: admin, body: { name: '', email: 'nope' } });
+  assert.equal(bad.status, 422);
+  const ok = await call('PATCH', `/api/admin/staff/${rec.id}`, { token: admin, body: { name: 'Priya Sharma', phone: '90000 00009', email: 'priya@example.com' } });
+  assert.equal(ok.status, 200);
+  assert.equal(ok.body.user.phone, '+919000000009');
+  assert.ok(await login('9000000009', (await call('POST', `/api/admin/staff/${rec.id}/reset`, { token: admin })).body.password));
+});

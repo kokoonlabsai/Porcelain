@@ -174,9 +174,10 @@ function Closures({ initial }) {
 const ROLES = { doctor: 'Doctor', reception: 'Reception & pharmacy', admin: 'Admin (full access)' };
 
 export function StaffAccounts() {
-  const { user, toast } = useApp();
+  const { user, setUser, toast } = useApp();
   const { data, error, loading, reload } = useLoad(() => api('/admin/staff'), []);
   const [adding, setAdding] = useState(false);
+  const [editing, setEditing] = useState(null);
   const [issued, setIssued] = useState(null);
   if (error) return <div className="page"><ErrorBox error={error} onRetry={reload} /></div>;
   if (loading) return <div className="page"><PageSkeleton /></div>;
@@ -199,8 +200,9 @@ export function StaffAccounts() {
               <Avatar name={u.name} />
               <div className="grow">
                 <div className="strong">{u.name}{u.id === user.id && <span className="muted"> (you)</span>}</div>
-                <div className="small muted">{displayPhone(u.phone)}{u.must_change_password ? ' · hasn’t logged in yet' : ''}</div>
+                <div className="small muted">{displayPhone(u.phone)}{u.email ? ` · ${u.email}` : ''}{u.must_change_password ? ' · hasn’t logged in yet' : ''}</div>
               </div>
+              <Button className="sm" onClick={() => setEditing(u)} title="Edit details"><Pencil size={15} /><span className="hide-sm">Edit</span></Button>
               <select className="input sm hide-sm" style={{ width: 200 }} value={u.role} disabled={u.id === user.id} onChange={(e) => patch(u, { role: e.target.value })}>
                 {Object.entries(ROLES).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
               </select>
@@ -211,38 +213,69 @@ export function StaffAccounts() {
         </div>
       </div>
       {adding && <StaffForm onClose={() => setAdding(false)} onDone={(u, password) => { setAdding(false); setIssued({ user: u, password }); reload(); }} />}
+      {editing && (
+        <StaffForm
+          staff={editing}
+          self={editing.id === user.id}
+          onClose={() => setEditing(null)}
+          onDone={(u) => {
+            setEditing(null);
+            if (u.id === user.id) setUser({ ...user, ...u });
+            toast('Details saved');
+            reload();
+          }}
+        />
+      )}
       {issued && <TempPasswordModal staff name={issued.user.name} phone={issued.user.phone} account={{ password: issued.password }} onClose={() => setIssued(null)} />}
     </div>
   );
 }
 
-function StaffForm({ onClose, onDone }) {
-  const [f, setF] = useState({ name: '', phone: '', email: '', role: 'doctor' });
+/** Add a staff member, or edit one's name, phone, email and role. */
+function StaffForm({ staff, self = false, onClose, onDone }) {
+  const editing = !!staff;
+  const [f, setF] = useState(() => ({ name: staff?.name || '', phone: staff?.phone || '', email: staff?.email || '', role: staff?.role || 'doctor' }));
   const [errors, setErrors] = useState({});
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const phoneChanged = editing && f.phone.replace(/\D/g, '').slice(-10) !== staff.phone.replace(/\D/g, '').slice(-10);
   const submit = async (e) => {
     e.preventDefault();
     setBusy(true);
     setErrors({});
     setError('');
     try {
-      const r = await api('/admin/staff', { method: 'POST', body: f });
-      onDone(r.user, r.password);
+      if (editing) {
+        const body = { name: f.name, phone: f.phone, email: f.email, ...(self ? {} : { role: f.role }) };
+        const r = await api(`/admin/staff/${staff.id}`, { method: 'PATCH', body });
+        onDone(r.user);
+      } else {
+        const r = await api('/admin/staff', { method: 'POST', body: f });
+        onDone(r.user, r.password);
+      }
     } catch (ex) { setErrors(fieldErrors(ex)); setError(ex.message); } finally { setBusy(false); }
   };
   return (
-    <Modal title="Add a staff member" onClose={onClose}>
+    <Modal title={editing ? `Edit ${staff.name}` : 'Add a staff member'} onClose={onClose}>
       <form className="stack gap-16" onSubmit={submit}>
-        <Field label="Name" error={errors.name}><input className="input" value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} placeholder="Dr. Anjali Mehta" required autoFocus /></Field>
-        <Field label="Phone number" hint="They log in with this number" error={errors.phone}><input className="input" type="tel" value={f.phone} onChange={(e) => setF({ ...f, phone: e.target.value })} required /></Field>
+        <Field label="Name" error={errors.name}><input className="input" value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} placeholder="Dr. Nitya Bajpai" required autoFocus /></Field>
+        <Field label="Phone number" hint={phoneChanged ? 'They’ll log in with the new number from now on' : 'They log in with this number'} error={errors.phone}>
+          <input className="input" type="tel" value={f.phone} onChange={(e) => setF({ ...f, phone: e.target.value })} required />
+        </Field>
         <Field label="Email (optional)" error={errors.email}><input className="input" type="email" value={f.email} onChange={(e) => setF({ ...f, email: e.target.value })} /></Field>
-        <Field label="Role" error={errors.role}>
-          <div className="chips">{Object.entries(ROLES).map(([k, l]) => <button type="button" key={k} className={`chip ${f.role === k ? 'on' : ''}`} onClick={() => setF({ ...f, role: k })}>{l}</button>)}</div>
+        <Field label="Role" hint={self ? 'You can’t change your own role' : undefined} error={errors.role}>
+          <div className="chips">
+            {Object.entries(ROLES).map(([k, l]) => (
+              <button type="button" key={k} disabled={self} className={`chip ${f.role === k ? 'on' : ''}`} onClick={() => setF({ ...f, role: k })}>{l}</button>
+            ))}
+          </div>
         </Field>
         {error && !Object.keys(errors).length && <div className="notice red small">{error}</div>}
-        <p className="small muted">They’ll get a temporary password to log in with, and choose their own on first login.</p>
-        <div className="row" style={{ justifyContent: 'flex-end' }}><Button type="button" className="ghost" onClick={onClose}>Cancel</Button><Button className="primary" loading={busy}>Create account</Button></div>
+        {!editing && <p className="small muted">They’ll get a temporary password to log in with, and choose their own on first login.</p>}
+        <div className="row" style={{ justifyContent: 'flex-end' }}>
+          <Button type="button" className="ghost" onClick={onClose}>Cancel</Button>
+          <Button className="primary" loading={busy}>{editing ? 'Save changes' : 'Create account'}</Button>
+        </div>
       </form>
     </Modal>
   );

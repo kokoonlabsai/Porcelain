@@ -156,19 +156,41 @@ router.patch(
   '/staff/:id',
   wrap(async (req, res) => {
     const u = await loadStaff(req.params.id);
-    const { role, active, name, email } = req.body || {};
+    const { role, active, name, email, phone } = req.body || {};
     if (u._id.equals(req.user._id) && ((role && role !== 'admin') || active === false)) {
       throw new HttpError(409, 'You can’t remove your own admin access');
     }
     const set = {};
+    const errors = {};
     if (role !== undefined) {
-      if (!STAFF.includes(role)) throw new HttpError(422, 'Pick a role');
-      set.role = role;
+      if (!STAFF.includes(role)) errors.role = 'Pick a role';
+      else set.role = role;
     }
     if (active !== undefined) set.active = !!active;
-    if (name !== undefined && str(name)) set.name = str(name, 120);
-    if (email !== undefined) set.email = str(email, 200);
-    if (Object.keys(set).length) await db.users.updateOne({ _id: u._id }, { $set: set });
+    if (name !== undefined) {
+      if (!str(name)) errors.name = 'Name is required';
+      else set.name = str(name, 120);
+    }
+    if (email !== undefined) {
+      const e = str(email, 200);
+      if (e && !isEmail(e)) errors.email = 'That email doesn’t look right';
+      else set.email = e;
+    }
+    if (phone !== undefined) {
+      const p = normalizePhone(phone);
+      if (!p) errors.phone = 'Enter a valid phone number';
+      else set.phone = p;
+    }
+    if (Object.keys(errors).length) throw new HttpError(422, 'Please check the highlighted fields', errors);
+    if (Object.keys(set).length) {
+      try {
+        await db.users.updateOne({ _id: u._id }, { $set: set });
+      } catch (e) {
+        // Phone numbers are unique across patients and staff: it's the login.
+        if (e.code === 11000) throw new HttpError(409, 'Someone else already uses this phone number', { phone: 'Already in use' });
+        throw e;
+      }
+    }
     res.json({ user: staffOut(await db.users.findOne({ _id: u._id })) });
   })
 );
